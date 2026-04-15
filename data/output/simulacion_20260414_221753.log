@@ -1,0 +1,10 @@
+[2026-04-14 22:17:53] Inicio de simulacion
+[2026-04-14 22:17:53] Data dir: /home/krlos/Desktop/PUCP/DP1/Algoritmos/algoritmos/data
+[2026-04-14 22:17:53] Output dir: /home/krlos/Desktop/PUCP/DP1/Algoritmos/algoritmos/data/output
+[2026-04-14 22:17:53] Algoritmo: AMBOS
+[2026-04-14 22:17:53] Max envios por archivo: TODOS
+[2026-04-14 22:17:57] Dataset cargado en 3858 ms | aeropuertos=30 | vuelos=2866 | paquetes=9519995
+[2026-04-14 22:17:57] Diagnostico temporal | ventanaVuelos=2026-01-02..2026-01-02 | paquetesAntes=0 | paquetesDespues=9519507 | paquetesFueraVentana=9519507
+[2026-04-14 22:17:57] Ejecucion paralela iniciada para ALNS y ACO
+[2026-04-14 22:17:57] Inicio estrategia ALNS
+[2026-04-14 22:17:57] Inicio estrategia ACO
