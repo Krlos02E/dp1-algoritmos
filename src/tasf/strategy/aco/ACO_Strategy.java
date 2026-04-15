@@ -16,10 +16,13 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 
 public class ACO_Strategy implements PlanificadorStrategy {
     private final Random random;
@@ -36,6 +39,8 @@ public class ACO_Strategy implements PlanificadorStrategy {
     public Solucion planificar(Dataset datos, Config_Simulacion config) {
         RouteFinder finder = new RouteFinder(datos);
         Map<String, List<Ruta>> candidatos = PlanificacionUtils.construirCandidatosRutas(datos, config, finder);
+        Map<String, List<Ruta>> candidatosPodados = podarCandidatosPorLlegada(candidatos, config.getTopRutasACO());
+        Map<Ruta, Set<String>> cacheIdsVuelosRuta = new IdentityHashMap<>();
 
         Map<Tramo, Double> feromonas = new HashMap<>();
         for (Tramo tramo : datos.getTodosLosTramos()) {
@@ -48,26 +53,61 @@ public class ACO_Strategy implements PlanificadorStrategy {
         int iteraciones = Math.max(1, config.getIteracionesACO());
         // Iteración ACO: varias hormigas construyen soluciones y luego se actualizan feromonas.
         for (int iter = 0; iter < iteraciones; iter++) {
-            Map<String, Ruta> mejorIterPropuesta = null;
-            Solucion mejorIter = null;
+            List<SolucionHormiga> solucionesIter = new ArrayList<>();
 
             int hormigas = Math.max(1, config.getHormigasACO());
             for (int ant = 0; ant < hormigas; ant++) {
-                Map<String, Ruta> propuestaHormiga = construirSolucionHormiga(datos, config, candidatos, feromonas);
-                Solucion solHormiga = PlanificacionUtils.evaluarAsignacion("ACO", propuestaHormiga, datos, config);
-                if (mejorIter == null || solHormiga.getCostoTotal() < mejorIter.getCostoTotal()) {
-                    mejorIter = solHormiga;
-                    mejorIterPropuesta = propuestaHormiga;
+                Map<String, Ruta> propuestaHormiga = construirSolucionHormiga(datos, config, candidatosPodados, feromonas);
+                Set<String> vuelosBloqueados = seleccionarVuelosBloqueados(propuestaHormiga, config);
+                if (!vuelosBloqueados.isEmpty()) {
+                    propuestaHormiga = reencaminarPorVuelosBloqueados(
+                            propuestaHormiga,
+                            vuelosBloqueados,
+                            datos,
+                            config,
+                            candidatosPodados,
+                            feromonas,
+                            cacheIdsVuelosRuta
+                    );
                 }
+                Solucion solHormiga = PlanificacionUtils.evaluarAsignacion("ACO", propuestaHormiga, datos, config);
+                solucionesIter.add(new SolucionHormiga(propuestaHormiga, solHormiga));
             }
 
             evaporarFeromonas(feromonas, config.getEvaporacionFeromona());
-            if (mejorIterPropuesta != null && mejorIter != null) {
-                depositarFeromonas(feromonas, mejorIterPropuesta, mejorIter, config.getDepositoFeromonaQ());
-                if (mejorIter.getCostoTotal() < mejorGlobal.getCostoTotal()) {
-                    mejorGlobal = mejorIter;
-                    mejorGlobalPropuesta = new HashMap<>(mejorIterPropuesta);
-                }
+            if (solucionesIter.isEmpty()) {
+                continue;
+            }
+
+            solucionesIter.sort(Comparator.comparingDouble(s -> s.solucion().getCostoTotal()));
+            SolucionHormiga mejorIter = solucionesIter.get(0);
+            if (mejorIter.solucion().getCostoTotal() < mejorGlobal.getCostoTotal()) {
+                mejorGlobal = mejorIter.solucion();
+                mejorGlobalPropuesta = new HashMap<>(mejorIter.propuesta());
+            }
+
+            int elite = Math.min(Math.max(1, config.getHormigasEliteACO()), solucionesIter.size());
+            for (int i = 0; i < elite; i++) {
+                SolucionHormiga eliteHormiga = solucionesIter.get(i);
+                double pesoRanking = (elite - i) / (double) elite;
+                double factorElite = config.getFactorEliteACO() * pesoRanking;
+                depositarFeromonas(
+                        feromonas,
+                        eliteHormiga.propuesta(),
+                        eliteHormiga.solucion(),
+                        config.getDepositoFeromonaQ(),
+                        factorElite
+                );
+            }
+
+            if (!mejorGlobalPropuesta.isEmpty()) {
+                depositarFeromonas(
+                        feromonas,
+                        mejorGlobalPropuesta,
+                        mejorGlobal,
+                        config.getDepositoFeromonaQ(),
+                        config.getFactorGlobalBestACO()
+                );
             }
         }
 
@@ -80,7 +120,26 @@ public class ACO_Strategy implements PlanificadorStrategy {
         }
         salida.setMetrica("feromonaMinima", minFer == Double.POSITIVE_INFINITY ? 0.0 : minFer);
         salida.setMetrica("feromonaMaxima", maxFer == Double.NEGATIVE_INFINITY ? 0.0 : maxFer);
+        salida.setMetrica("topRutasACO", config.getTopRutasACO());
+        salida.setMetrica("hormigasEliteACO", config.getHormigasEliteACO());
         return salida;
+    }
+
+    private Map<String, List<Ruta>> podarCandidatosPorLlegada(Map<String, List<Ruta>> candidatos, int topN) {
+        if (topN <= 0) {
+            return candidatos;
+        }
+
+        Map<String, List<Ruta>> podados = new HashMap<>();
+        for (Map.Entry<String, List<Ruta>> entry : candidatos.entrySet()) {
+            List<Ruta> rutas = new ArrayList<>(entry.getValue());
+            rutas.sort(Comparator.comparing(Ruta::getLlegadaUtc).thenComparingInt(Ruta::getCantidadSaltos));
+            if (rutas.size() > topN) {
+                rutas = new ArrayList<>(rutas.subList(0, topN));
+            }
+            podados.put(entry.getKey(), rutas);
+        }
+        return podados;
     }
 
     private Map<String, Ruta> construirSolucionHormiga(
@@ -112,13 +171,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
                     continue;
                 }
 
-                double desirability = calcularDeseabilidad(
-                        paquete,
-                        ruta,
-                        datos,
-                        config,
-                        feromonas
-                );
+                double desirability = calcularDeseabilidad(paquete, ruta, datos, config, feromonas);
                 factibles.add(new RutaProb(ruta, desirability));
                 total += desirability;
             }
@@ -127,7 +180,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
                 continue;
             }
 
-            Ruta elegida = seleccionarPorRuleta(factibles, total);
+            Ruta elegida = seleccionarRutaProbabilistica(factibles, total);
             estado.reservarRutaSiFactible(
                     paquete,
                     elegida,
@@ -148,13 +201,17 @@ public class ACO_Strategy implements PlanificadorStrategy {
             Config_Simulacion config,
             Map<Tramo, Double> feromonas
     ) {
+        // Recomendado para convergencia en este problema: alpha~=0.9 y beta~=3.2.
+        double alpha = Math.max(0.5, config.getAlphaACO());
+        double beta = Math.max(2.5, config.getBetaACO());
+
         double tau = 1.0;
         for (Tramo tramo : ruta.getTramos()) {
-            tau *= Math.pow(feromonas.getOrDefault(tramo, 1.0), config.getAlphaACO());
+            tau *= Math.pow(feromonas.getOrDefault(tramo, 1.0), alpha);
         }
 
         double etaBase = calcularVisibilidad(paquete, ruta, datos, config);
-        double eta = Math.pow(Math.max(1e-9, etaBase), config.getBetaACO());
+        double eta = Math.pow(Math.max(1e-9, etaBase), beta);
         return Math.max(1e-12, tau * eta);
     }
 
@@ -186,7 +243,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
         return visibilidad;
     }
 
-    private Ruta seleccionarPorRuleta(List<RutaProb> rutas, double total) {
+    private Ruta seleccionarRutaProbabilistica(List<RutaProb> rutas, double total) {
         double ticket = random.nextDouble() * total;
         double acumulado = 0.0;
         for (RutaProb rp : rutas) {
@@ -196,6 +253,156 @@ public class ACO_Strategy implements PlanificadorStrategy {
             }
         }
         return rutas.get(rutas.size() - 1).ruta;
+    }
+
+    private Set<String> seleccionarVuelosBloqueados(Map<String, Ruta> propuesta, Config_Simulacion config) {
+        if (propuesta.isEmpty()) {
+            return Set.of();
+        }
+
+        Map<String, Integer> usoVuelo = new HashMap<>();
+        for (Ruta ruta : propuesta.values()) {
+            for (Vuelo vuelo : ruta.getVuelos()) {
+                usoVuelo.put(vuelo.getId(), usoVuelo.getOrDefault(vuelo.getId(), 0) + 1);
+            }
+        }
+
+        if (usoVuelo.isEmpty()) {
+            return Set.of();
+        }
+
+        int cantidad = Math.max(1, (int) Math.ceil(usoVuelo.size() * config.getPorcentajeRuptura()));
+        List<Map.Entry<String, Integer>> vuelosOrdenados = new ArrayList<>(usoVuelo.entrySet());
+        vuelosOrdenados.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+
+        Set<String> bloqueados = new HashSet<>();
+        for (int i = 0; i < Math.min(cantidad, vuelosOrdenados.size()); i++) {
+            bloqueados.add(vuelosOrdenados.get(i).getKey());
+        }
+        return bloqueados;
+    }
+
+    private Map<String, Ruta> reencaminarPorVuelosBloqueados(
+            Map<String, Ruta> propuestaBase,
+            Set<String> vuelosBloqueados,
+            Dataset datos,
+            Config_Simulacion config,
+            Map<String, List<Ruta>> candidatos,
+            Map<Tramo, Double> feromonas,
+            Map<Ruta, Set<String>> cacheIdsVuelosRuta
+    ) {
+        Map<String, Ruta> propuesta = new HashMap<>(propuestaBase);
+        Set<String> paquetesImpactados = new HashSet<>();
+
+        for (Map.Entry<String, Ruta> entry : propuestaBase.entrySet()) {
+            if (rutaContieneVueloBloqueado(entry.getValue(), vuelosBloqueados, cacheIdsVuelosRuta)) {
+                paquetesImpactados.add(entry.getKey());
+            }
+        }
+
+        for (String paqueteId : paquetesImpactados) {
+            propuesta.remove(paqueteId);
+        }
+
+        EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
+        List<Paquete> pendientes = new ArrayList<>();
+        for (String id : paquetesImpactados) {
+            pendientes.add(datos.getPaquetePorId(id));
+        }
+        pendientes.sort(Comparator.comparing(p -> PlanificacionUtils.getCreacionUtc(p, datos, config)));
+
+        for (Paquete paquete : pendientes) {
+            Ruta alternativa = seleccionarAlternativaFactible(
+                    paquete,
+                    estado,
+                    candidatos.getOrDefault(paquete.getId(), List.of()),
+                    vuelosBloqueados,
+                    datos,
+                    config,
+                    feromonas,
+                    cacheIdsVuelosRuta
+            );
+            if (alternativa == null) {
+                continue;
+            }
+
+            estado.reservarRutaSiFactible(
+                    paquete,
+                    alternativa,
+                    PlanificacionUtils.getCreacionUtc(paquete, datos, config),
+                    datos,
+                    config
+            );
+            propuesta.put(paquete.getId(), alternativa);
+        }
+
+        return propuesta;
+    }
+
+    private Ruta seleccionarAlternativaFactible(
+            Paquete paquete,
+            EstadoOperacional estado,
+            List<Ruta> candidatas,
+            Set<String> vuelosBloqueados,
+            Dataset datos,
+            Config_Simulacion config,
+            Map<Tramo, Double> feromonas,
+            Map<Ruta, Set<String>> cacheIdsVuelosRuta
+    ) {
+        Ruta mejor = null;
+        double mejorDesirability = Double.NEGATIVE_INFINITY;
+        LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(paquete, datos, config);
+
+        for (Ruta ruta : candidatas) {
+            if (rutaContieneVueloBloqueado(ruta, vuelosBloqueados, cacheIdsVuelosRuta)) {
+                continue;
+            }
+
+            EstadoOperacional prueba = estado.copia();
+            boolean ok = prueba.reservarRutaSiFactible(paquete, ruta, creacion, datos, config);
+            if (!ok) {
+                continue;
+            }
+
+            double desirability = calcularDeseabilidad(paquete, ruta, datos, config, feromonas);
+            if (desirability > mejorDesirability) {
+                mejorDesirability = desirability;
+                mejor = ruta;
+            }
+        }
+
+        return mejor;
+    }
+
+    private boolean rutaContieneVueloBloqueado(Ruta ruta, Set<String> vuelosBloqueados, Map<Ruta, Set<String>> cacheIdsVuelosRuta) {
+        if (vuelosBloqueados == null || vuelosBloqueados.isEmpty()) {
+            return false;
+        }
+
+        Set<String> idsRuta = cacheIdsVuelosRuta.computeIfAbsent(ruta, this::extraerIdsVuelos);
+        if (vuelosBloqueados.size() <= idsRuta.size()) {
+            for (String idBloqueado : vuelosBloqueados) {
+                if (idsRuta.contains(idBloqueado)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        for (String idRuta : idsRuta) {
+            if (vuelosBloqueados.contains(idRuta)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Set<String> extraerIdsVuelos(Ruta ruta) {
+        Set<String> ids = new HashSet<>();
+        for (Vuelo vuelo : ruta.getVuelos()) {
+            ids.add(vuelo.getId());
+        }
+        return ids;
     }
 
     private void evaporarFeromonas(Map<Tramo, Double> feromonas, double evaporacion) {
@@ -210,10 +417,11 @@ public class ACO_Strategy implements PlanificadorStrategy {
             Map<Tramo, Double> feromonas,
             Map<String, Ruta> propuesta,
             Solucion solucion,
-            double q
+            double q,
+            double factor
     ) {
-        // Depósito refuerza los tramos usados por la mejor hormiga de la iteración.
-        double deposito = q / Math.max(1.0, solucion.getCostoTotal());
+        // Depósito elitista: refuerza la mejor iteración y con más peso al mejor histórico.
+        double deposito = (q * Math.max(0.1, factor)) / Math.max(1.0, solucion.getCostoTotal());
 
         for (Ruta ruta : propuesta.values()) {
             for (Tramo tramo : ruta.getTramos()) {
@@ -221,6 +429,9 @@ public class ACO_Strategy implements PlanificadorStrategy {
                 feromonas.put(tramo, actual + deposito);
             }
         }
+    }
+
+    private record SolucionHormiga(Map<String, Ruta> propuesta, Solucion solucion) {
     }
 
     private static class RutaProb {

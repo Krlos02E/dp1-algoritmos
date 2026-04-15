@@ -4,6 +4,7 @@ import tasf.config.Config_Simulacion;
 import tasf.core.Dataset;
 import tasf.core.Solucion;
 import tasf.io.DatasetTextoLoader;
+import tasf.model.Ruta;
 import tasf.strategy.PlanificadorStrategy;
 import tasf.strategy.aco.ACO_Strategy;
 import tasf.strategy.alns.ALNS_Strategy;
@@ -13,7 +14,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -206,6 +209,7 @@ public class Main {
                         + " | colapso=" + solucion.getEventosColapso()
                         + " | costo=" + String.format(Locale.ROOT, "%.2f", solucion.getCostoTotal())
         );
+        logAsignaciones(logger, nombre, solucion);
         return solucion;
     }
 
@@ -231,6 +235,12 @@ public class Main {
         config.setIteracionesALNS(p.iteracionesAlns);
         config.setIteracionesACO(p.iteracionesAco);
         config.setHormigasACO(p.hormigasAco);
+        config.setTopRutasACO(4);
+        config.setHormigasEliteACO(Math.max(2, p.hormigasAco / 3));
+        config.setFactorEliteACO(1.6);
+        config.setFactorGlobalBestACO(2.6);
+        config.setAlphaACO(0.9);
+        config.setBetaACO(3.2);
         config.setMaxEscalas(3);
         config.setMaxRutasPorPaquete(6);
         config.setVentanaActualizacionPesos(10);
@@ -250,6 +260,29 @@ public class Main {
         System.out.printf("Horas promedio de entrega: %.2f%n", solucion.getHorasPromedioEntrega());
         System.out.printf("Costo total: %.2f%n", solucion.getCostoTotal());
         System.out.println("Metricas: " + solucion.getMetricas());
+        System.out.println("Rutas asignadas:");
+        imprimirAsignacionesConsola(solucion);
+    }
+
+    private static void imprimirAsignacionesConsola(Solucion solucion) {
+        ArrayList<Map.Entry<String, Ruta>> asignaciones = new ArrayList<>(solucion.getRutasAsignadas().entrySet());
+        asignaciones.sort(Map.Entry.comparingByKey());
+        for (Map.Entry<String, Ruta> entry : asignaciones) {
+            System.out.println("  " + entry.getKey() + " -> " + describirRuta(entry.getValue()));
+        }
+    }
+
+    private static void logAsignaciones(SimulacionLogger logger, String nombre, Solucion solucion) {
+        ArrayList<Map.Entry<String, Ruta>> asignaciones = new ArrayList<>(solucion.getRutasAsignadas().entrySet());
+        asignaciones.sort(Map.Entry.comparingByKey());
+        logger.log("Asignaciones " + nombre + " | total=" + asignaciones.size());
+        for (Map.Entry<String, Ruta> entry : asignaciones) {
+            logger.log("Asignada " + entry.getKey() + " -> " + describirRuta(entry.getValue()));
+        }
+    }
+
+    private static String describirRuta(Ruta ruta) {
+        return ruta.getVuelos().stream().map(v -> v.getId()).collect(Collectors.joining(" -> "));
     }
 
     private static class ParametrosCli {

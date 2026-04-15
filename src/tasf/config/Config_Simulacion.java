@@ -17,10 +17,14 @@ public class Config_Simulacion {
     private double porcentajeRuptura = 0.25;
     private int ventanaActualizacionPesos = 20;
     private double tasaAprendizajePesos = 0.35;
-    private double alphaACO = 1.2;
-    private double betaACO = 2.1;
+    private double alphaACO = 0.9;
+    private double betaACO = 3.2;
     private double evaporacionFeromona = 0.25;
     private double depositoFeromonaQ = 80.0;
+    private int topRutasACO = 4;
+    private int hormigasEliteACO = 3;
+    private double factorEliteACO = 1.5;
+    private double factorGlobalBestACO = 2.5;
     private LocalDateTime finSimulacionUtcExclusivo;
 
     public String getAeropuertoHub() {
@@ -157,6 +161,38 @@ public class Config_Simulacion {
 
     public void setDepositoFeromonaQ(double depositoFeromonaQ) {
         this.depositoFeromonaQ = depositoFeromonaQ;
+    }
+
+    public int getTopRutasACO() {
+        return topRutasACO;
+    }
+
+    public void setTopRutasACO(int topRutasACO) {
+        this.topRutasACO = topRutasACO;
+    }
+
+    public int getHormigasEliteACO() {
+        return hormigasEliteACO;
+    }
+
+    public void setHormigasEliteACO(int hormigasEliteACO) {
+        this.hormigasEliteACO = hormigasEliteACO;
+    }
+
+    public double getFactorEliteACO() {
+        return factorEliteACO;
+    }
+
+    public void setFactorEliteACO(double factorEliteACO) {
+        this.factorEliteACO = factorEliteACO;
+    }
+
+    public double getFactorGlobalBestACO() {
+        return factorGlobalBestACO;
+    }
+
+    public void setFactorGlobalBestACO(double factorGlobalBestACO) {
+        this.factorGlobalBestACO = factorGlobalBestACO;
     }
 
     public LocalDateTime getFinSimulacionUtcExclusivo() {
