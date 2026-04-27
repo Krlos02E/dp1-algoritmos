@@ -1,0 +1,81 @@
+nohup: ignoring input
+Bloques seleccionados: 15
+Ventana simulacion: 5 dias
+Rango usado: 2026-01-02 .. 2029-01-05
+Salida CSV: /home/rvs/PUCP/DP1/dp1-algoritmos/output/dca_resultados.csv
+Bloque 1: 2026-01-25 .. 2026-01-29
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-01-24 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1517135.25 | asignados=693 | fuera_plazo=171 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-01-24 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4647751.45 | asignados=356 | fuera_plazo=79 | colapso=0
+Bloque 2: 2026-05-20 .. 2026-05-24
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-05-19 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1339277.00 | asignados=709 | fuera_plazo=164 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-05-19 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4452698.18 | asignados=375 | fuera_plazo=77 | colapso=0
+Bloque 3: 2026-07-23 .. 2026-07-27
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-07-22 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1439817.15 | asignados=698 | fuera_plazo=160 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-07-22 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4705171.50 | asignados=350 | fuera_plazo=78 | colapso=0
+Bloque 4: 2026-09-10 .. 2026-09-14
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-09-09 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1464395.42 | asignados=694 | fuera_plazo=154 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-09-09 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4527735.18 | asignados=367 | fuera_plazo=75 | colapso=0
+Bloque 5: 2026-11-11 .. 2026-11-15
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-11-10 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1451403.07 | asignados=696 | fuera_plazo=157 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2026-11-10 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4567541.33 | asignados=365 | fuera_plazo=83 | colapso=0
+Bloque 6: 2027-01-04 .. 2027-01-08
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-01-03 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1354283.22 | asignados=706 | fuera_plazo=158 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-01-03 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4270924.20 | asignados=396 | fuera_plazo=88 | colapso=0
+Bloque 7: 2027-04-23 .. 2027-04-27
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-04-22 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1546696.68 | asignados=691 | fuera_plazo=175 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-04-22 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4759554.08 | asignados=347 | fuera_plazo=88 | colapso=0
+Bloque 8: 2027-07-07 .. 2027-07-11
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-07-06 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1324138.50 | asignados=711 | fuera_plazo=166 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-07-06 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4395708.58 | asignados=386 | fuera_plazo=98 | colapso=0
+Bloque 9: 2027-08-11 .. 2027-08-15
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-08-10 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1392058.70 | asignados=700 | fuera_plazo=149 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-08-10 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4542373.40 | asignados=365 | fuera_plazo=73 | colapso=0
+Bloque 10: 2027-11-28 .. 2027-12-02
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-11-27 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1463219.78 | asignados=707 | fuera_plazo=205 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2027-11-27 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4802802.35 | asignados=346 | fuera_plazo=101 | colapso=0
+Bloque 11: 2028-02-17 .. 2028-02-21
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-02-16 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1371872.72 | asignados=703 | fuera_plazo=153 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-02-16 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4527769.48 | asignados=369 | fuera_plazo=83 | colapso=0
+Bloque 12: 2028-03-18 .. 2028-03-22
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-03-17 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1382239.57 | asignados=708 | fuera_plazo=177 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-03-17 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4689951.88 | asignados=354 | fuera_plazo=88 | colapso=0
+Bloque 13: 2028-06-20 .. 2028-06-24
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-06-19 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1457527.63 | asignados=699 | fuera_plazo=171 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-06-19 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4765030.58 | asignados=343 | fuera_plazo=74 | colapso=0
+Bloque 14: 2028-08-30 .. 2028-09-03
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-08-29 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1232580.45 | asignados=721 | fuera_plazo=169 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-08-29 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4657848.68 | asignados=357 | fuera_plazo=87 | colapso=0
+Bloque 15: 2028-10-24 .. 2028-10-28
+  ALNS: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-10-23 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ALNS
+    costo=1214857.03 | asignados=723 | fuera_plazo=170 | colapso=0
+  ACO: java -cp /home/rvs/PUCP/DP1/dp1-algoritmos/out tasf.app.Main --data-dir=/home/rvs/PUCP/DP1/dp1-algoritmos/data --min-envios=200 --max-envios-total=800 --random-seed=17 --fecha=2028-10-23 --dias-vuelos=6 --dias-simulacion=5 --algoritmo=ACO
+    costo=4480452.78 | asignados=377 | fuera_plazo=96 | colapso=0
+CSV generado con 30 filas: /home/rvs/PUCP/DP1/dp1-algoritmos/output/dca_resultados.csv

@@ -12,12 +12,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class DatasetTextoLoader {
@@ -41,6 +44,61 @@ public final class DatasetTextoLoader {
         List<Vuelo> vuelos = PlanesVueloParser.parse(rutas.archivoPlanesVuelo(), fechaInicio, diasVuelos, aeropuertos);
         List<Paquete> paquetes = cargarPaquetes(rutas.carpetaEnvios(), maxEnviosPorArchivo, aeropuertos);
         return new Dataset(aeropuertos, vuelos, paquetes);
+    }
+
+    public static ResultadoCargaSimulacion cargarDatasetSimulacion(
+            Path carpetaDatos,
+            LocalDate fechaInicioVuelos,
+            int diasVuelos,
+            int diasSimulacion,
+            int minEnvios,
+            int maxEnviosTotal,
+            long randomSeed
+    ) throws IOException {
+        RutasDataset rutas = resolverRutas(carpetaDatos);
+
+        Map<String, Aeropuerto> aeropuertos = cargarAeropuertos(rutas.archivoAeropuertos());
+        List<Vuelo> vuelos = PlanesVueloParser.parse(rutas.archivoPlanesVuelo(), fechaInicioVuelos, diasVuelos, aeropuertos);
+        List<Paquete> paquetes = cargarPaquetesCompleto(rutas.carpetaEnvios(), aeropuertos);
+
+        LocalDate inicioSim = fechaInicioVuelos.plusDays(1);
+        LocalDate finSim = inicioSim.plusDays(Math.max(1, diasSimulacion) - 1L);
+
+        List<Paquete> filtrados = paquetes.stream()
+                .filter(pk -> !pk.getFecha().isBefore(inicioSim) && !pk.getFecha().isAfter(finSim))
+                .collect(Collectors.toList());
+
+        int totalFiltrados = filtrados.size();
+        if (totalFiltrados < minEnvios) {
+            return new ResultadoCargaSimulacion(
+                    new Dataset(aeropuertos, vuelos, List.of()),
+                    paquetes.size(),
+                    totalFiltrados,
+                    0,
+                    true,
+                    "menos_de_min_envios",
+                    inicioSim,
+                    finSim
+            );
+        }
+
+        List<Paquete> usados = filtrados;
+        if (maxEnviosTotal > 0 && totalFiltrados > maxEnviosTotal) {
+            ArrayList<Paquete> muestra = new ArrayList<>(filtrados);
+            Collections.shuffle(muestra, new Random(randomSeed));
+            usados = new ArrayList<>(muestra.subList(0, maxEnviosTotal));
+        }
+
+        return new ResultadoCargaSimulacion(
+                new Dataset(aeropuertos, vuelos, usados),
+                paquetes.size(),
+                totalFiltrados,
+                usados.size(),
+                false,
+                "",
+                inicioSim,
+                finSim
+        );
     }
 
     public static String descripcionEstructuraEsperada(Path carpetaDatos) {
@@ -206,6 +264,79 @@ public final class DatasetTextoLoader {
         }
 
         return paquetes;
+    }
+
+    private static List<Paquete> cargarPaquetesCompleto(
+            Path carpetaEnvios,
+            Map<String, Aeropuerto> aeropuertos
+    ) throws IOException {
+        List<Paquete> paquetes = new ArrayList<>();
+
+        try (Stream<Path> stream = Files.list(carpetaEnvios)) {
+            List<Path> archivos = stream
+                    .filter(Files::isRegularFile)
+                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
+                    .collect(Collectors.toList());
+
+            for (Path archivo : archivos) {
+                Matcher matcher = PATRON_ARCHIVO_ENVIOS.matcher(archivo.getFileName().toString());
+                if (!matcher.matches()) {
+                    continue;
+                }
+
+                String origen = matcher.group(1);
+                if (!aeropuertos.containsKey(origen)) {
+                    continue;
+                }
+
+                try (Stream<String> lineas = Files.lines(archivo, StandardCharsets.UTF_8)) {
+                    lineas.map(String::trim)
+                            .filter(s -> !s.isEmpty())
+                            .forEach(raw -> agregarPaqueteSiValido(raw, origen, aeropuertos, paquetes));
+                }
+            }
+        }
+
+        return paquetes;
+    }
+
+    private static void agregarPaqueteSiValido(
+            String raw,
+            String origen,
+            Map<String, Aeropuerto> aeropuertos,
+            List<Paquete> paquetes
+    ) {
+        try {
+            Paquete parsed = Paquete.parse(raw, origen);
+            if (!aeropuertos.containsKey(parsed.getDestinoOACI())) {
+                return;
+            }
+
+            String idUnico = origen + "-" + parsed.getId();
+            paquetes.add(new Paquete(
+                    idUnico,
+                    parsed.getOrigenOACI(),
+                    parsed.getFecha(),
+                    parsed.getHora(),
+                    parsed.getDestinoOACI(),
+                    parsed.getCantidad(),
+                    parsed.getReferencia()
+            ));
+        } catch (RuntimeException ignored) {
+            // Saltamos lineas mal formadas para mantener la simulacion corriendo.
+        }
+    }
+
+    public record ResultadoCargaSimulacion(
+            Dataset dataset,
+            int totalCargados,
+            int totalFiltrados,
+            int totalUsados,
+            boolean ventanaDescartada,
+            String motivo,
+            LocalDate inicioSimulacion,
+            LocalDate finSimulacion
+    ) {
     }
 
     private record RutasDataset(

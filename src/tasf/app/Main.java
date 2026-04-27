@@ -37,7 +37,9 @@ public class Main {
             logger.log("Data dir: " + p.carpetaDatos);
             logger.log("Output dir: " + outputDir);
             logger.log("Algoritmo: " + p.algoritmo);
-            logger.log("Max envios por archivo: " + (p.maxEnviosPorArchivo <= 0 ? "TODOS" : p.maxEnviosPorArchivo));
+            logger.log("Min envios: " + p.minEnvios);
+            logger.log("Max envios total: " + p.maxEnviosTotal);
+            logger.log("Random seed: " + p.randomSeed);
 
             System.out.println("========== Simulacion Tasf.B2B ==========");
             System.out.println(DatasetTextoLoader.descripcionEstructuraEsperada(p.carpetaDatos));
@@ -46,8 +48,10 @@ public class Main {
                     "Dias de vuelos solicitados: "
                         + (p.diasVuelos <= 0 ? "AUTO(dias-simulacion+1)" : p.diasVuelos)
                 );
-            System.out.println("Max envios por archivo: " + (p.maxEnviosPorArchivo <= 0 ? "TODOS" : p.maxEnviosPorArchivo));
-            System.out.println("Dias de simulacion posteriores: " + p.diasSimulacion);
+            System.out.println("Dias de simulacion: " + p.diasSimulacion);
+            System.out.println("Min envios: " + p.minEnvios);
+            System.out.println("Max envios total: " + p.maxEnviosTotal);
+            System.out.println("Random seed: " + p.randomSeed);
             System.out.println("Algoritmo: " + p.algoritmo);
             System.out.println("Log file: " + logger.getFilePath());
 
@@ -56,14 +60,19 @@ public class Main {
                 logger.log("Dias de vuelos efectivos: " + diasVuelosEfectivos);
 
             Dataset datos;
+            DatasetTextoLoader.ResultadoCargaSimulacion carga;
             long t0Carga = System.nanoTime();
             try {
-                datos = DatasetTextoLoader.cargarDataset(
+                carga = DatasetTextoLoader.cargarDatasetSimulacion(
                         p.carpetaDatos,
                         p.fechaInicioVuelos,
-                    diasVuelosEfectivos,
-                        p.maxEnviosPorArchivo
+                        diasVuelosEfectivos,
+                        p.diasSimulacion,
+                        p.minEnvios,
+                        p.maxEnviosTotal,
+                        p.randomSeed
                 );
+                datos = carga.dataset();
             } catch (IOException | RuntimeException e) {
                 logger.log("ERROR cargando dataset: " + e.getMessage());
                 System.err.println("Error cargando dataset: " + e.getMessage());
@@ -80,73 +89,54 @@ public class Main {
                             + " | aeropuertos=" + datos.getAeropuertos().size()
                             + " | vuelos=" + datos.getVuelos().size()
                             + " | paquetes=" + datos.getPaquetes().size()
+                            + " | totalCargados=" + carga.totalCargados()
+                            + " | totalFiltrados=" + carga.totalFiltrados()
+                            + " | totalUsados=" + carga.totalUsados()
             );
 
-                    LocalDate inicioSim = p.fechaInicioVuelos.plusDays(1);
-                    LocalDate finSim = inicioSim.plusDays(p.diasSimulacion - 1L);
-                    long fueraVentanaSim = datos.getPaquetes().stream()
-                        .filter(pk -> pk.getFecha().isBefore(inicioSim) || pk.getFecha().isAfter(finSim))
-                        .count();
-
-                    int paquetesAntes = datos.getPaquetes().size();
-                    datos = new Dataset(
-                        datos.getAeropuertos(),
-                        datos.getVuelos(),
-                        datos.getPaquetes().stream()
-                            .filter(pk -> !pk.getFecha().isBefore(inicioSim) && !pk.getFecha().isAfter(finSim))
-                            .collect(Collectors.toList())
-                    );
-                    int paquetesDespues = datos.getPaquetes().size();
-
-                    logger.log(
-                        "Ventana simulacion aplicada | inicio=" + inicioSim
-                            + " | fin=" + finSim
-                            + " | fueraVentana=" + fueraVentanaSim
-                            + " | antes=" + paquetesAntes
-                            + " | despues=" + paquetesDespues
-                    );
-                    System.out.println(
-                        "Ventana simulacion: " + inicioSim + ".." + finSim
-                            + " | paquetes usados=" + paquetesDespues + " / " + paquetesAntes
-                    );
-
-                    LocalDate fechaIniVuelos = p.fechaInicioVuelos;
-                    LocalDate fechaFinVuelos = p.fechaInicioVuelos.plusDays(diasVuelosEfectivos - 1L);
-                    long paquetesAntesVuelos = datos.getPaquetes().stream()
-                        .filter(pk -> pk.getFecha().isBefore(fechaIniVuelos))
-                        .count();
-                    long paquetesDespuesVuelos = datos.getPaquetes().stream()
-                        .filter(pk -> pk.getFecha().isAfter(fechaFinVuelos))
-                        .count();
-                    long paquetesFueraVentana = paquetesAntesVuelos + paquetesDespuesVuelos;
-
-                    logger.log(
-                        "Diagnostico temporal | ventanaVuelos=" + fechaIniVuelos + ".." + fechaFinVuelos
-                            + " | paquetesAntes=" + paquetesAntesVuelos
-                            + " | paquetesDespues=" + paquetesDespuesVuelos
-                            + " | paquetesFueraVentana=" + paquetesFueraVentana
-                    );
-                    if (paquetesFueraVentana > 0) {
-                    System.out.println("Advertencia: " + paquetesFueraVentana
-                        + " paquetes estan fuera de la ventana de vuelos cargada ("
-                        + fechaIniVuelos + ".." + fechaFinVuelos + ").");
-                    }
-
             Config_Simulacion config = construirConfig(p);
-                    LocalDateTime finSimulacionUtcExclusivo = finSim.plusDays(1).atStartOfDay();
-                    config.setFinSimulacionUtcExclusivo(finSimulacionUtcExclusivo);
-                    logger.log("Corte estricto de simulacion (UTC exclusivo): " + finSimulacionUtcExclusivo);
-                    System.out.println("Corte estricto de simulacion (UTC exclusivo): " + finSimulacionUtcExclusivo);
+            LocalDate inicioSim = carga.inicioSimulacion();
+            LocalDate finSim = carga.finSimulacion();
+
+            if (carga.ventanaDescartada()) {
+                logger.log(
+                        "Ventana descartada | fecha_inicio=" + inicioSim
+                                + " | total_filtrados=" + carga.totalFiltrados()
+                                + " | total_usados=" + carga.totalUsados()
+                                + " | motivo=" + carga.motivo()
+                );
+                System.out.println("ventana_descartada=true");
+                System.out.println("motivo=" + carga.motivo());
+                System.exit(0);
+                return;
+            }
+
+            System.out.println(
+                    "Ventana simulacion: " + inicioSim + ".." + finSim
+                            + " | filtrados=" + carga.totalFiltrados()
+                            + " | usados=" + carga.totalUsados()
+            );
+            logger.log(
+                    "Ventana simulacion aceptada | fecha_inicio=" + inicioSim
+                            + " | fecha_fin=" + finSim
+                            + " | total_filtrados=" + carga.totalFiltrados()
+                            + " | total_usados=" + carga.totalUsados()
+            );
+
+            LocalDateTime finSimulacionUtcExclusivo = finSim.plusDays(1).atStartOfDay();
+            config.setFinSimulacionUtcExclusivo(finSimulacionUtcExclusivo);
+            logger.log("Corte estricto de simulacion (UTC exclusivo): " + finSimulacionUtcExclusivo);
+            System.out.println("Corte estricto de simulacion (UTC exclusivo): " + finSimulacionUtcExclusivo);
 
             if (p.algoritmo.equals("AMBOS")) {
-                ejecutarAmbosEnParalelo(datos, config, logger);
+                ejecutarAmbosEnParalelo(datos, config, logger, inicioSim, carga.totalFiltrados(), carga.totalUsados());
             } else if (p.algoritmo.equals("ALNS")) {
                 PlanificadorStrategy alns = new ALNS_Strategy(17L);
-                Solucion solucion = ejecutarEstrategia("ALNS", alns, datos, config, logger);
+                Solucion solucion = ejecutarEstrategia("ALNS", alns, datos, config, logger, inicioSim, carga.totalFiltrados(), carga.totalUsados());
                 imprimirResumen(solucion, datos);
             } else if (p.algoritmo.equals("ACO")) {
                 PlanificadorStrategy aco = new ACO_Strategy(17L);
-                Solucion solucion = ejecutarEstrategia("ACO", aco, datos, config, logger);
+                Solucion solucion = ejecutarEstrategia("ACO", aco, datos, config, logger, inicioSim, carga.totalFiltrados(), carga.totalUsados());
                 imprimirResumen(solucion, datos);
             }
 
@@ -161,17 +151,20 @@ public class Main {
     private static void ejecutarAmbosEnParalelo(
             Dataset datos,
             Config_Simulacion config,
-            SimulacionLogger logger
+            SimulacionLogger logger,
+            LocalDate fechaInicio,
+            int totalFiltrados,
+            int totalUsados
     ) {
         logger.log("Ejecucion paralela iniciada para ALNS y ACO");
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             CompletableFuture<Solucion> alnsF = CompletableFuture.supplyAsync(
-                    () -> ejecutarEstrategia("ALNS", new ALNS_Strategy(17L), datos, config, logger),
+                () -> ejecutarEstrategia("ALNS", new ALNS_Strategy(17L), datos, config, logger, fechaInicio, totalFiltrados, totalUsados),
                     executor
             );
             CompletableFuture<Solucion> acoF = CompletableFuture.supplyAsync(
-                    () -> ejecutarEstrategia("ACO", new ACO_Strategy(17L), datos, config, logger),
+                () -> ejecutarEstrategia("ACO", new ACO_Strategy(17L), datos, config, logger, fechaInicio, totalFiltrados, totalUsados),
                     executor
             );
 
@@ -195,9 +188,18 @@ public class Main {
             PlanificadorStrategy estrategia,
             Dataset datos,
             Config_Simulacion config,
-            SimulacionLogger logger
+            SimulacionLogger logger,
+            LocalDate fechaInicio,
+            int totalFiltrados,
+            int totalUsados
     ) {
         long t0 = System.nanoTime();
+        logger.log(
+            "Corrida | fecha_inicio=" + fechaInicio
+                + " | total_filtrados=" + totalFiltrados
+                + " | total_usados=" + totalUsados
+                + " | algoritmo=" + nombre
+        );
         logger.log("Inicio estrategia " + nombre);
         Solucion solucion = estrategia.planificar(datos, config);
         long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
@@ -290,6 +292,9 @@ public class Main {
         private final LocalDate fechaInicioVuelos;
         private final int diasVuelos;
         private final int maxEnviosPorArchivo;
+        private final int minEnvios;
+        private final int maxEnviosTotal;
+        private final long randomSeed;
         private final int diasSimulacion;
         private final String algoritmo;
         private final int iteracionesAlns;
@@ -301,6 +306,9 @@ public class Main {
                 LocalDate fechaInicioVuelos,
                 int diasVuelos,
                 int maxEnviosPorArchivo,
+                int minEnvios,
+                int maxEnviosTotal,
+                long randomSeed,
                 int diasSimulacion,
                 String algoritmo,
                 int iteracionesAlns,
@@ -311,6 +319,9 @@ public class Main {
             this.fechaInicioVuelos = fechaInicioVuelos;
             this.diasVuelos = diasVuelos;
             this.maxEnviosPorArchivo = maxEnviosPorArchivo;
+            this.minEnvios = minEnvios;
+            this.maxEnviosTotal = maxEnviosTotal;
+            this.randomSeed = randomSeed;
             this.diasSimulacion = diasSimulacion;
             this.algoritmo = algoritmo;
             this.iteracionesAlns = iteracionesAlns;
@@ -323,7 +334,10 @@ public class Main {
             LocalDate fechaInicio = LocalDate.of(2026, 1, 2);
             int diasVuelos = 0;
             int maxEnviosPorArchivo = 0;
-            int diasSimulacion = 5;
+            int minEnvios = 200;
+            int maxEnviosTotal = 800;
+            long randomSeed = 17L;
+            int diasSimulacion = 30;
             String algoritmo = "AMBOS";
             int iteracionesAlns = 30;
             int iteracionesAco = 12;
@@ -343,6 +357,12 @@ public class Main {
                     } else {
                         maxEnviosPorArchivo = Integer.parseInt(valor);
                     }
+                } else if (arg.startsWith("--min-envios=")) {
+                    minEnvios = Integer.parseInt(arg.substring("--min-envios=".length()));
+                } else if (arg.startsWith("--max-envios-total=")) {
+                    maxEnviosTotal = Integer.parseInt(arg.substring("--max-envios-total=".length()));
+                } else if (arg.startsWith("--random-seed=")) {
+                    randomSeed = Long.parseLong(arg.substring("--random-seed=".length()));
                 } else if (arg.startsWith("--dias-simulacion=")) {
                     diasSimulacion = Integer.parseInt(arg.substring("--dias-simulacion=".length()));
                 } else if (arg.startsWith("--algoritmo=")) {
@@ -361,6 +381,9 @@ public class Main {
                     fechaInicio,
                     Math.max(0, diasVuelos),
                     Math.max(0, maxEnviosPorArchivo),
+                    Math.max(0, minEnvios),
+                    Math.max(0, maxEnviosTotal),
+                    randomSeed,
                     Math.max(1, diasSimulacion),
                     algoritmo,
                     Math.max(1, iteracionesAlns),
