@@ -1,6 +1,6 @@
 # Guía: DistribucionEnviosPorDia
 
-Utilidad para agrupar envíos por fecha, contar envíos diarios y encontrar el día más cercano a un objetivo.
+Utilidad para agrupar envíos por fecha, contar envíos diarios y encontrar el día más cercano a un objetivo. En el pipeline actual se usa para elegir el día histórico más cercano al nivel de carga objetivo.
 
 ## Características principales
 
@@ -104,5 +104,6 @@ Excelente rendimiento con grandes datasets:
 ```
 src/tasf/core/DistribucionEnviosPorDia.java
 ```
+
 
 La carpeta `src/tasf/examples/` ya no forma parte del proyecto; esta guía describe solo la clase activa.

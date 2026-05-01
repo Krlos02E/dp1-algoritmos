@@ -3,26 +3,24 @@ package tasf.strategy.flow;
 import tasf.config.Config_Simulacion;
 import tasf.core.Dataset;
 import tasf.model.Ruta;
-import tasf.model.Vuelo;
 
-import java.util.List;
 import java.util.Map;
 
 /**
- * Strategy para asignacion deterministica de paquetes a vuelos.
+ * Strategy para asignacion deterministica de paquetes a rutas seleccionadas.
  */
 public interface Asignador {
 
     /**
-     * Asigna paquetes a vuelos respetando capacidades y minimizando costo.
+     * Asigna paquetes a rutas seleccionadas respetando capacidades y factibilidad.
      *
-     * @param rutasPlanificadas rutas candidatas por paquete
+     * @param rutasPlanificadas ruta seleccionada por paquete
      * @param datos dataset con vuelos, aeropuertos y paquetes
      * @param config configuracion de simulacion
-     * @return map paquete -> vuelo asignado
+     * @return map paquete -> ruta aceptada
      */
-    Map<String, Vuelo> asignar(
-            Map<String, List<Ruta>> rutasPlanificadas,
+    Map<String, Ruta> asignar(
+            Map<String, Ruta> rutasPlanificadas,
             Dataset datos,
             Config_Simulacion config
     );

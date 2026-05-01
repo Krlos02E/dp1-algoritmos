@@ -1,21 +1,25 @@
-# DP1-Algoritmos: Sistema de Planificación Logística de Dos Fases
+# DP1-Algoritmos
 
-Sistema de optimización logística que divide la solución en **dos fases independientes**:
-1. **Fase 1**: Planificación de rutas con metaheurísticos (ACO o ALNS)
-2. **Fase 2**: Asignación determinística de envíos a vuelos (Min-Cost Flow)
+Sistema de planificación logística con arquitectura de dos fases.
 
-Con framework de experimentación automatizado para análisis estadístico.
+1. Fase 1: metaheurísticas ACO y ALNS seleccionan una ruta por paquete.
+2. Fase 2: un asignador determinístico valida y reserva la ruta completa paquete -> ruta -> vuelos.
+
+El flujo está orientado a experimentación automatizada, con métricas de costo, tardanza, capacidad, colapso y porcentaje de éxito.
 
 ---
 
-## 📋 Contenido
+## Contenido
 
 - [Quick Start](#quick-start)
-- [Algoritmos Utilizados](#algoritmos-utilizados)
-- [Arquitectura](#arquitectura)
-- [Ejecución](#ejecución)
-- [Framework de Experimentación](#framework-de-experimentación)
-- [Documentación Completa](#documentación-completa)
+- [Descripción general](#descripción-general)
+- [Dos fases](#dos-fases)
+- [Función objetivo global](#función-objetivo-global)
+- [Flujo de ejecución](#flujo-de-ejecución)
+- [Cómo ejecutar](#cómo-ejecutar)
+- [Estructura principal del proyecto](#estructura-principal-del-proyecto)
+- [Notas de diseño](#notas-de-diseño)
+- [Documentación relacionada](#documentación-relacionada)
 
 ---
 
@@ -124,94 +128,84 @@ Usa `--barrer-porcentaje-envios` si quieres reducir progresivamente la muestra h
 Asegúrate de usar Java 8+ con `java -version`.
 ---
 
-## 🎯 Algoritmos Utilizados
+## Algoritmos utilizados
 
-El sistema ejecuta **AMBOS algoritmos** en cada corrida: **ALNS** y **ACO**. No hay parámetro para seleccionar solo uno.
+El sistema ejecuta ambos algoritmos en cada corrida: ALNS y ACO.
 
 ### ALNS
-- Heurística de búsqueda local adaptativa
-- Parámetro de semilla: `--semilla-alns` (default: 17)
+- Construye una solución completa paquete -> ruta.
+- Usa destrucción multi-paquete, reparación con orden variable y aceptación tipo simulated annealing.
+- Mantiene la mejor solución global encontrada.
 
 ### ACO
-- Metaheurístico basado en colonia de hormigas
-- Parámetro de semilla: `--semilla-aco` (default: 17)
+- Construye soluciones por hormigas.
+- Evalúa el costo global durante la construcción.
+- Aplica una mejora local posterior a la construcción.
 
 ### Cómo se ejecutan
-- Para cada configuración, ALNS y ACO corren por separado
-- `--corridas=N` significa N corridas de ALNS y N corridas de ACO
-- Los resultados se guardan en CSV separados por corrida y resumen
+- Para cada configuración, ALNS y ACO corren por separado.
+- `--corridas=N` significa N corridas de ALNS y N corridas de ACO.
+- Los resultados se guardan en CSV raw y CSV resumen.
 
 ---
 
-## 🏗️ Arquitectura
+## Arquitectura
 
-La solución está dividida en dos fases:
+La solución sigue dividida en dos fases:
 
-1. **Planificación de rutas**: `ACO_RutasPlanner` o `ALNS_RutasPlanner`
-2. **Asignación a vuelos**: `MinCostFlowAssigner` dentro de `TwoPhaseOrchestrator`
+1. Fase 1: `ACO_RutasPlanner` o `ALNS_RutasPlanner` producen una ruta seleccionada por paquete.
+2. Fase 2: `MinCostFlowAssigner` valida y reserva la ruta seleccionada sobre el estado operacional.
 
 El flujo completo lo ejecuta `StandardExperimentPipeline` desde `Main`.
 
 ---
 
-## 🔧 Ejecución
+## Ejecución
 
-El sistema está diseñado para **experimentos automatizados**, no simulaciones interactivas:
+El sistema está diseñado para experimentos automatizados, no simulaciones interactivas.
 
-1. **Carga de Datos**
-   - Lee aeropuertos, vuelos y envíos desde `data/input/`
-   - Detecta automáticamente fechas y capacidades
-
-2. **Cálculo de Capacidad Diaria**
-   - Analiza máxima capacidad del sistema
-   - Genera estadísticas por día
-
-3. **Generación de Niveles de Carga**
-   - Por defecto: 5 niveles entre 20%-70%
-   - Cada nivel → selecciona día histórico más cercano
-
-4. **Ejecución de Experimentos**
-   - Para cada nivel de carga:
-     - Selecciona día objetivo
-     - Ejecuta ALNS N veces
-     - Ejecuta ACO N veces
-     - Mide: % éxito, maletas asignadas, duración, colapso
-
-5. **Detección de Colapso**
-   - Identifica fallos: paquetes sin asignar o llegadas tardías
-
-6. **Exportación de Resultados**
-   - CSV Raw: una fila por corrida
-   - CSV Resumen: agregado por algoritmo/nivel
-   - Listo para análisis estadístico (ANOVA, gráficas)
+1. Carga aeropuertos, vuelos y envíos desde `data/input/`.
+2. Calcula capacidad máxima diaria y distribución de envíos.
+3. Genera niveles de carga o selecciona un día concreto.
+4. Ejecuta ALNS y ACO con las semillas indicadas.
+5. Cada algoritmo construye una solución paquete -> ruta.
+6. La Fase 2 valida la factibilidad y reserva la ruta completa.
+7. Se evalúa la solución final y se exportan CSV en `data/output/`.
 
 ---
 
-## 📊 Framework de Experimentación
+## Framework de experimentación
 
-### StandardExperimentPipeline
-
-Orquestador principal que automatiza todo el flujo:
+`StandardExperimentPipeline` automatiza el flujo completo:
 
 ```java
 StandardExperimentPipeline pipeline = new StandardExperimentPipeline(
-    dataDir,              // Path: directorio de datos
-    fechaInicio,          // LocalDate: inicio ventana de vuelos
-    diasVuelos,           // int: cantidad de días
-    maxEnviosPorArchivo,  // int: 0 = todos
-    corridasPorAlgoritmo, // int: cuántas veces ejecutar cada algoritmo
-    algoritmos            // List<AlgorithmSpec>: ALNS + ACO
+    dataDir,
+    fechaInicio,
+    diasVuelos,
+    maxEnviosPorArchivo,
+    corridasPorAlgoritmo,
+    fechaEnviosFiltro,
+    usarDiaMaximoEnvios,
+    barrerPorcentajeEnvios,
+    porcentajeEnviosInicial,
+    porcentajeEnviosMinimo,
+    pasoPorcentajeEnvios,
+    algoritmos
 );
-
-StandardExperimentPipeline.PipelineResult resultado = pipeline.ejecutar();
-// Retorna: capacidadMaximaDiaria, nivelesObjetivo, rawCsv, summaryCsv
 ```
 
-### Utilidades de Soporte
+La ejecución estándar desde `Main` registra dos `AlgorithmSpec`:
 
-## 📊 Métricas y Resultados
+- `ALNS` -> `ALNS_RutasPlanner`
+- `ACO` -> `ACO_RutasPlanner`
+
+---
+
+## Métricas y resultados
 
 Cada corrida guarda:
+
 - algoritmo
 - nivel objetivo o fecha seleccionada
 - paquetes asignados / no asignados
@@ -221,182 +215,48 @@ Cada corrida guarda:
 - costo total
 - tiempo de ejecución
 
-## 📚 Documentación Relacionada
+Los CSV resultantes quedan en `data/output/`.
+
+---
+
+## Documentación relacionada
 
 - [data/README.md](data/README.md)
 - [ARQUITECTURA_DOS_FASES.md](ARQUITECTURA_DOS_FASES.md)
 - [IMPLEMENTACION_DOS_FASES.md](IMPLEMENTACION_DOS_FASES.md)
 - [GUIA_DISTRIBUCION_ENVIOS.md](GUIA_DISTRIBUCION_ENVIOS.md)
 - [GUIA_GENERADOR_NIVELES_CARGA.md](GUIA_GENERADOR_NIVELES_CARGA.md)
-        ├── Paquete.java
-        ├── Vuelo.java
-        └── ...
-```
 
 ---
 
-## 📚 Documentación Completa
-
-### Arquitectura y Diseño
-
-- **[ARQUITECTURA_DOS_FASES.md](ARQUITECTURA_DOS_FASES.md)**
-  - Descripción técnica detallada de cada fase
-  - Interfaces y clases principales
-  - Función de costo Min-Cost Flow
-  - Ventajas del diseño de dos fases
-  - Parámetros de configuración
-
-- **[IMPLEMENTACION_DOS_FASES.md](IMPLEMENTACION_DOS_FASES.md)**
-  - Resumen de implementación
-  - Comparación: antes vs después
-  - 3 ejemplos de uso básicos
-  - Próximos pasos sugeridos
-
-### Utilidades
-
-- **[GUIA_DISTRIBUCION_ENVIOS.md](GUIA_DISTRIBUCION_ENVIOS.md)**
-  - Cómo agrupar envíos por fecha
-  - Encontrar días cercanos a objetivo
-  - Estadísticas de distribución
-  - 3 ejemplos de uso
-
-- **[GUIA_GENERADOR_NIVELES_CARGA.md](GUIA_GENERADOR_NIVELES_CARGA.md)**
-  - Cómo generar niveles de carga
-  - Rangos y distribuciones
-  - 4 ejemplos prácticos
-  - Casos de uso recomendados
-
-### Datos
-
-- **[data/README.md](data/README.md)**
-  - Estructura esperada de archivos de entrada
-  - Formatos esperados
-  - Ejecución y compilación
-
----
-
-## 🔬 Análisis de Resultados
-
-### Archivos CSV Generados
-
-Después de ejecutar el pipeline, se generan en `data/output/`:
-
-1. **experimentos_raw_TIMESTAMP.csv**
-   - Una fila por corrida
-   - Columnas: `algoritmo`, `nivel`, `corrida`, `maletas_asignadas`, `no_asignados`, `porcentajeExito`, `duración_ms`, `hayColapso`
-   - Listo para ANOVA y gráficas en Python/R/Excel
-
-2. **experimentos_resumen_TIMESTAMP.csv**
-   - Agregado por algoritmo y nivel
-   - Columnas: `algoritmo`, `nivel`, `promedio_exito`, `desviacion_exito`, `min_exito`, `max_exito`
-   - Para comparativas de alto nivel
-
-### Análisis Recomendado
-
-```python
-import pandas as pd
-
-# Cargar resultados
-df = pd.read_csv('data/output/experimentos_raw_*.csv')
-
-# ANOVA: Comparar algoritmos
-from scipy import stats
-alns_exito = df[df['algoritmo'] == 'ALNS']['porcentajeExito']
-aco_exito = df[df['algoritmo'] == 'ACO']['porcentajeExito']
-f_stat, p_value = stats.f_oneway(alns_exito, aco_exito)
-
-# Gráficas
-import matplotlib.pyplot as plt
-df.boxplot(column='porcentajeExito', by='algoritmo')
-plt.show()
-```
-
-## 🔍 Troubleshooting
-
-### Error: "No se encontraron archivos"
-→ Verifica que `data/input/aeropuertos/`, `data/input/vuelos/` y `data/input/envios/` existan y contengan archivos
-
-### Error: "No hay datos de entrada"
-→ Revisa que los archivos de entrada tengan el formato esperado (ver `data/README.md`)
-
-### Pocos paquetes asignados
-→ Es normal si los niveles de carga son muy altos o la ventana de vuelos es pequeña
-→ Usa `--dias-vuelos` más grande para incluir más vuelos
-
-### Error al compilar
-→ Asegúrate de usar Java 8+: `java -version`
-→ Usa: `javac -encoding UTF-8 -d out $(find src -name "*.java")`
-
----
-
-## 📋 Parámetros CLI
-
-| Parámetro | Valor Default | Descripción |
-|-----------|---------------|-------------|
-| `--data-dir` | `data` | Directorio raíz de datos |
-| `--fecha-inicio-vuelos` | `2026-01-02` | Fecha de inicio de la ventana de vuelos |
-| `--dias-vuelos` | `0` | Cantidad de días a incluir; `0` significa cargar todos los vuelos disponibles |
-| `--max-envios` | `0` (todos) | Límite de envíos por archivo (0 = sin límite) |
-| `--corridas` | `10` | Corridas por algoritmo |
-| `--semilla-alns` | `17` | Semilla aleatoria para ALNS |
-| `--semilla-aco` | `17` | Semilla aleatoria para ACO |
-
----
-
-## ✅ Validación
+## Validación
 
 ```bash
-# Compilación
 javac -encoding UTF-8 -d out $(find src -name "*.java")
-
-# Ejecución básica
 java -cp out tasf.app.Main
-
-# Tests
 java -cp out tasf.tests.PlannerTests
 ```
 
 ---
 
-## 🛠️ Desarrollo
+## Desarrollo
 
-### Agregar un Nuevo Metaheurístico
+### Agregar un nuevo metaheurístico
 
-1. Implementar `PlanificadorRutasStrategy`
-2. Retornar `Map<String, List<Ruta>>`
-3. Agregarlo a `Main.java` en la lista de `AlgorithmSpec`
+1. Implementar `PlanificadorRutasStrategy`.
+2. Retornar `Map<String, Ruta>`.
+3. Registrar la estrategia en `Main.java` como un nuevo `AlgorithmSpec`.
 
-```java
-List.of(
-    new StandardExperimentPipeline.AlgorithmSpec("MiAlgoritmo", 
-        () -> new tasf.strategy.MiAlgoritmo(semilla))
-)
-```
+### Criterio de aceptación
 
-### Cambiar Función de Costo
-
-Modificar `MinCostFlowAssigner.calcularCostoAsignacion()`:
-```java
-private double calcularCostoAsignacion(Paquete paquete, Ruta ruta, Vuelo vuelo, int cargaActualVuelo, Dataset datos, Config_Simulacion config) {
-    double horasTransporte = ruta.getHorasTotalesDesde(...);
-    double penalizacion = (llegada > plazo) ? 2500 : 0;
-    double balanceo = (cargaVuelo / capacidad) * 100;
-    return horasTransporte + penalizacion + balanceo;
-}
-```
+La función objetivo global vive en `PlanificacionUtils.evaluarAsignacion(...)` y no en `MinCostFlowAssigner`.
 
 ---
 
-## 📞 Contacto y Soporte
+## Contacto y soporte
 
-Para preguntas sobre:
-- **Arquitectura**: Ver `ARQUITECTURA_DOS_FASES.md`
-- **Utilidades**: Ver `GUIA_*.md` respectivos
-- **Datos**: Ver `data/README.md`
+- Arquitectura: `ARQUITECTURA_DOS_FASES.md`
+- Utilidades: `GUIA_*.md`
+- Datos: `data/README.md`
 
-**Nota**: La carpeta `src/tasf/examples/` fue eliminada.
-
----
-
-**Última actualización**: 2026-04-30  
-**Estado**: ✅ Totalmente funcional (36 archivos Java fuente, 0 errores de compilación)
+**Nota**: La carpeta `src/tasf/examples/` ya no forma parte del proyecto.

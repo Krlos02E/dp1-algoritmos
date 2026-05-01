@@ -3,9 +3,7 @@ package tasf.strategy.flow;
 import tasf.config.Config_Simulacion;
 import tasf.core.Dataset;
 import tasf.model.Ruta;
-import tasf.model.Vuelo;
 
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -19,8 +17,8 @@ public class MinCostFlowAsignador implements Asignador {
     }
 
     @Override
-    public Map<String, Vuelo> asignar(
-            Map<String, List<Ruta>> rutasPlanificadas,
+    public Map<String, Ruta> asignar(
+            Map<String, Ruta> rutasPlanificadas,
             Dataset datos,
             Config_Simulacion config
     ) {

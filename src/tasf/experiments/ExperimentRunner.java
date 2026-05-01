@@ -4,7 +4,6 @@ import tasf.config.Config_Simulacion;
 import tasf.core.Dataset;
 import tasf.model.Paquete;
 import tasf.model.Ruta;
-import tasf.model.Vuelo;
 import tasf.strategy.PlanificadorRutasStrategy;
 import tasf.strategy.flow.MinCostFlowAssigner;
 
@@ -21,7 +20,7 @@ import java.util.stream.Collectors;
 
 /**
  * Runner de experimentos para comparar metaheuristicos (ej. ACO y ALNS)
- * usando un mismo asignador deterministico (Min-Cost Flow).
+ * usando un mismo asignador deterministico sobre rutas seleccionadas.
  *
  * Flujo por nivel de carga:
  * 1) Selecciona el dia con carga total de maletas mas cercana al objetivo
@@ -80,8 +79,8 @@ public class ExperimentRunner {
                     long t0 = System.nanoTime();
 
                     PlanificadorRutasStrategy planner = algoritmo.strategyFactory.get();
-                    Map<String, List<Ruta>> rutas = planner.planificarRutas(dayDataset, config);
-                    Map<String, Vuelo> asignaciones = assigner.asignarEnviosAVuelos(rutas, dayDataset, config);
+                    Map<String, Ruta> rutas = planner.planificarRutas(dayDataset, config);
+                    Map<String, Ruta> asignaciones = assigner.asignarEnviosAVuelos(rutas, dayDataset, config);
 
                     int totalMaletas = calcularTotalMaletas(daySelection.paquetes);
                     int maletasAsignadas = calcularMaletasAsignadas(daySelection.paquetes, asignaciones);
@@ -143,7 +142,7 @@ public class ExperimentRunner {
         return paquetes.stream().mapToInt(Paquete::getCantidad).sum();
     }
 
-    private int calcularMaletasAsignadas(List<Paquete> paquetes, Map<String, Vuelo> asignaciones) {
+    private int calcularMaletasAsignadas(List<Paquete> paquetes, Map<String, Ruta> asignaciones) {
         int maletas = 0;
         for (Paquete paquete : paquetes) {
             if (asignaciones.containsKey(paquete.getId())) {

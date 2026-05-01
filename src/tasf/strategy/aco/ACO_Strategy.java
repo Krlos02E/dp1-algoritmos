@@ -112,6 +112,12 @@ public class ACO_Strategy implements PlanificadorStrategy {
         }
 
         Solucion salida = PlanificacionUtils.evaluarAsignacion("ACO", mejorGlobalPropuesta, datos, config);
+        Map<String, Ruta> refinada = refinarSolucionLocal(mejorGlobalPropuesta, candidatosPodados, datos, config);
+        Solucion salidaRefinada = PlanificacionUtils.evaluarAsignacion("ACO", refinada, datos, config);
+        if (salidaRefinada.getCostoTotal() < salida.getCostoTotal()) {
+            salida = salidaRefinada;
+            mejorGlobalPropuesta = refinada;
+        }
         double minFer = Double.POSITIVE_INFINITY;
         double maxFer = Double.NEGATIVE_INFINITY;
         for (double valor : feromonas.values()) {
@@ -123,6 +129,47 @@ public class ACO_Strategy implements PlanificadorStrategy {
         salida.setMetrica("topRutasACO", config.getTopRutasACO());
         salida.setMetrica("hormigasEliteACO", config.getHormigasEliteACO());
         return salida;
+    }
+
+    private Map<String, Ruta> refinarSolucionLocal(
+            Map<String, Ruta> propuestaInicial,
+            Map<String, List<Ruta>> candidatos,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        Map<String, Ruta> mejor = new HashMap<>(propuestaInicial);
+        double mejorCosto = PlanificacionUtils.evaluarAsignacion("ACO", mejor, datos, config).getCostoTotal();
+        Map<String, Ruta> referenciaOrden = new HashMap<>(mejor);
+
+        List<Paquete> paquetes = new ArrayList<>(datos.getPaquetes());
+        paquetes.sort((a, b) -> {
+            Ruta rutaB = referenciaOrden.get(b.getId());
+            Ruta rutaA = referenciaOrden.get(a.getId());
+            double costoB = rutaB == null ? Double.MAX_VALUE : rutaB.getHorasTotalesDesde(PlanificacionUtils.getCreacionUtc(b, datos, config));
+            double costoA = rutaA == null ? Double.MAX_VALUE : rutaA.getHorasTotalesDesde(PlanificacionUtils.getCreacionUtc(a, datos, config));
+            return Double.compare(costoB, costoA);
+        });
+
+        for (Paquete paquete : paquetes) {
+            List<Ruta> rutasPaquete = candidatos.getOrDefault(paquete.getId(), List.of());
+            Ruta rutaActual = mejor.get(paquete.getId());
+            for (Ruta alternativa : rutasPaquete) {
+                if (rutaActual != null && rutaActual.equals(alternativa)) {
+                    continue;
+                }
+
+                Map<String, Ruta> tentativa = new HashMap<>(mejor);
+                tentativa.put(paquete.getId(), alternativa);
+                Solucion solucionTentativa = PlanificacionUtils.evaluarAsignacion("ACO", tentativa, datos, config);
+                if (solucionTentativa.getCostoTotal() < mejorCosto) {
+                    mejor = tentativa;
+                    mejorCosto = solucionTentativa.getCostoTotal();
+                    rutaActual = alternativa;
+                }
+            }
+        }
+
+        return mejor;
     }
 
     private Map<String, List<Ruta>> podarCandidatosPorLlegada(Map<String, List<Ruta>> candidatos, int topN) {
@@ -171,7 +218,10 @@ public class ACO_Strategy implements PlanificadorStrategy {
                     continue;
                 }
 
-                double desirability = calcularDeseabilidad(paquete, ruta, datos, config, feromonas);
+                Map<String, Ruta> tentativa = new HashMap<>(propuesta);
+                tentativa.put(paquete.getId(), ruta);
+                double costoGlobal = PlanificacionUtils.evaluarAsignacion("ACO", tentativa, datos, config).getCostoTotal();
+                double desirability = calcularDeseabilidad(paquete, ruta, datos, config, feromonas, costoGlobal);
                 factibles.add(new RutaProb(ruta, desirability));
                 total += desirability;
             }
@@ -199,7 +249,8 @@ public class ACO_Strategy implements PlanificadorStrategy {
             Ruta ruta,
             Dataset datos,
             Config_Simulacion config,
-            Map<Tramo, Double> feromonas
+            Map<Tramo, Double> feromonas,
+            double costoGlobal
     ) {
         // Recomendado para convergencia en este problema: alpha~=0.9 y beta~=3.2.
         double alpha = Math.max(0.5, config.getAlphaACO());
@@ -210,8 +261,9 @@ public class ACO_Strategy implements PlanificadorStrategy {
             tau *= Math.pow(feromonas.getOrDefault(tramo, 1.0), alpha);
         }
 
-        double etaBase = calcularVisibilidad(paquete, ruta, datos, config);
-        double eta = Math.pow(Math.max(1e-9, etaBase), beta);
+        double etaLocal = calcularVisibilidad(paquete, ruta, datos, config);
+        double etaGlobal = 1.0 / (1.0 + Math.max(0.0, costoGlobal));
+        double eta = Math.pow(Math.max(1e-9, etaLocal * etaGlobal), beta);
         return Math.max(1e-12, tau * eta);
     }
 
@@ -315,6 +367,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
             Ruta alternativa = seleccionarAlternativaFactible(
                     paquete,
                     estado,
+                    propuesta,
                     candidatos.getOrDefault(paquete.getId(), List.of()),
                     vuelosBloqueados,
                     datos,
@@ -342,6 +395,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
     private Ruta seleccionarAlternativaFactible(
             Paquete paquete,
             EstadoOperacional estado,
+            Map<String, Ruta> propuestaBase,
             List<Ruta> candidatas,
             Set<String> vuelosBloqueados,
             Dataset datos,
@@ -364,7 +418,10 @@ public class ACO_Strategy implements PlanificadorStrategy {
                 continue;
             }
 
-            double desirability = calcularDeseabilidad(paquete, ruta, datos, config, feromonas);
+            Map<String, Ruta> tentativa = new HashMap<>(propuestaBase);
+            tentativa.put(paquete.getId(), ruta);
+            double costoGlobal = PlanificacionUtils.evaluarAsignacion("ACO", tentativa, datos, config).getCostoTotal();
+            double desirability = calcularDeseabilidad(paquete, ruta, datos, config, feromonas, costoGlobal);
             if (desirability > mejorDesirability) {
                 mejorDesirability = desirability;
                 mejor = ruta;

@@ -1,76 +1,70 @@
 # Arquitectura de Dos Fases: Planificación de Rutas + Asignación Determinística de Envíos
 
-## Descripción General
+## Descripción general
 
-La solución se ha dividido en **dos fases independientes y bien definidas**:
+La solución se ejecuta en dos fases coordinadas:
 
-### Fase 1: Planificación de Rutas (Metaheurísticos)
-- **Responsabilidad**: Determinar rutas candidatas para cada paquete
-- **Algoritmos**: ACO (Ant Colony Optimization) o ALNS (Adaptive Large Neighborhood Search)
-- **Salida**: `Map<String, List<Ruta>>` - para cada paquete, una lista de rutas candidatas ordenadas por preferencia
-- **Ubicación**: `tasf.strategy.aco.ACO_RutasPlanner` y `tasf.strategy.alns.ALNS_RutasPlanner`
+### Fase 1: planificación de rutas con metaheurísticas
+- Responsabilidad: construir una solución completa paquete -> ruta.
+- Algoritmos: ACO y ALNS.
+- Salida: `Map<String, Ruta>` con una ruta seleccionada por paquete.
+- Ubicación: `tasf.strategy.aco.ACO_RutasPlanner` y `tasf.strategy.alns.ALNS_RutasPlanner`.
 
-### Fase 2: Asignación de Envíos a Vuelos (Determinístico)
-- **Responsabilidad**: Asignar paquetes a vuelos específicos minimizando costo total
-- **Algoritmo**: Min-Cost Flow (implementado con enfoque greedy optimizado)
-- **Entrada**: Rutas candidatas de la Fase 1
-- **Salida**: `Map<String, Vuelo>` - asignación específica de paquete a vuelo
-- **Ubicación**: `tasf.strategy.flow.MinCostFlowAssigner`
+### Fase 2: asignación determinística
+- Responsabilidad: validar y reservar la ruta ya seleccionada.
+- Algoritmo: validación determinística con `EstadoOperacional` y `MinCostFlowAssigner`.
+- Entrada: `Map<String, Ruta>` producido en la Fase 1.
+- Salida: `Map<String, Ruta>` aceptada por factibilidad operacional.
+- Ubicación: `tasf.strategy.flow.MinCostFlowAssigner`.
 
+ACO y ALNS no entregan listas de candidatos al orquestador externo. Construyen soluciones completas, las puntúan con costo global y luego la Fase 2 valida capacidad, ocupación y restricciones temporales sobre la ruta elegida.
 ---
 
-## Estructura de Clases
+## Estructura de clases
 
 ### Interfaces
 
 #### `PlanificadorRutasStrategy`
 ```java
 public interface PlanificadorRutasStrategy {
-    Map<String, List<Ruta>> planificarRutas(Dataset datos, Config_Simulacion config);
+    Map<String, Ruta> planificarRutas(Dataset datos, Config_Simulacion config);
 }
 ```
-Nueva interfaz para la Fase 1 que devuelve solo rutas candidatas.
+Contrato de Fase 1: devuelve una ruta seleccionada por paquete.
 
-#### `PlanificadorStrategy` (original)
-Interfaz histórica que sigue existiendo en el código, pero el flujo actual usa `PlanificadorRutasStrategy`.
+#### `PlanificadorStrategy`
+Interfaz histórica que sigue existiendo para las estrategias completas ACO/ALNS.
 
----
+#### `Asignador`
+```java
+public interface Asignador {
+    Map<String, Ruta> asignar(Map<String, Ruta> rutasPlanificadas, Dataset datos, Config_Simulacion config);
+}
+```
+Contrato de Fase 2: valida la ruta ya elegida y la reserva si sigue siendo factible.
 
 ### Implementaciones de la Fase 1
 
-#### `ACO_RutasPlanner implements PlanificadorRutasStrategy`
-- Implementa ACO para planificación de rutas
-- Devuelve candidatos de rutas sin evaluación de asignación
+#### `ACO_RutasPlanner`
+- Enlaza `PlanificadorStrategy` con `PlanificadorRutasStrategy`.
+- Ejecuta `ACO_Strategy` y expone su solución paquete -> ruta.
 
-#### `ALNS_RutasPlanner implements PlanificadorRutasStrategy`
-- Implementa ALNS para planificación de rutas
-- Devuelve candidatos de rutas sin evaluación de asignación
+#### `ALNS_RutasPlanner`
+- Enlaza `PlanificadorStrategy` con `PlanificadorRutasStrategy`.
+- Ejecuta `ALNS_Strategy` y expone su solución paquete -> ruta.
 
----
+### Implementaciones de la Fase 2
 
-### Implementación de la Fase 2
+#### `MinCostFlowAsignador`
+- Adapta la interfaz `Asignador`.
+- Aplica validación determinística sobre rutas seleccionadas.
 
 #### `MinCostFlowAssigner`
-```java
-public Map<String, Vuelo> asignarEnviosAVuelos(
-    Map<String, List<Ruta>> rutasPlanificadas,
-    Dataset datos,
-    Config_Simulacion config
-)
-```
+- Recorre los paquetes en orden temporal.
+- Usa `EstadoOperacional` para verificar capacidad, ocupación y ventana temporal.
+- Acepta o rechaza la ruta completa sin volver a escoger rutas alternativas.
 
-**Algoritmo**: Asignador heurístico tipo min-cost con balanceo de carga
-1. Ordena paquetes por fecha de creación
-2. Para cada paquete, examina todas las opciones de vuelos en sus rutas candidatas
-3. Selecciona el vuelo con menor costo total considerando:
-   - Horas de transporte
-   - Penalización por incumplimiento de plazo
-   - Factor de balanceo de carga (evita sobrecargar vuelos)
-4. Respeta capacidades de vuelos
-
----
-
-### Orquestador de Dos Fases
+### Orquestador de dos fases
 
 #### `TwoPhaseOrchestrator`
 ```java
@@ -79,10 +73,11 @@ public class TwoPhaseOrchestrator {
 }
 ```
 
-**Flujo**:
-1. **Fase 1**: Llama al planificador de rutas → obtiene `Map<String, List<Ruta>>`
-2. **Fase 2**: Llama al asignador Min-Cost Flow → obtiene `Map<String, Vuelo>`
-3. **Evaluación**: Integra ambas fases en una `Solucion` final evaluada
+Flujo:
+
+1. Fase 1: el planificador devuelve `Map<String, Ruta>`.
+2. Fase 2: el asignador valida y reserva esa selección.
+3. Evaluación: `PlanificacionUtils.evaluarAsignacion(...)` calcula la solución final.
 
 ---
 
@@ -99,162 +94,120 @@ TwoPhaseOrchestrator orchestrator = new TwoPhaseOrchestrator(planificador);
 Solucion solucion = orchestrator.ejecutarFlujoCompleto(datos, config);
 ```
 
-### Opción 2: Solo Planificación de Rutas
+### Opción 2: solo planificación de rutas
 
 ```java
-// Si solo interesa las rutas sin Min-Cost Flow
 PlanificadorRutasStrategy planificador = new ALNS_RutasPlanner(semilla);
-Map<String, List<Ruta>> rutas = planificador.planificarRutas(datos, config);
+Map<String, Ruta> rutas = planificador.planificarRutas(datos, config);
 ```
 
-### Opción 3: Usar el asignador con rutas externas
+### Opción 3: validar rutas externas
 
 ```java
-// Si tienes rutas de otra fuente
-Map<String, List<Ruta>> rutasExternas = obtenerDeFuente();
+Map<String, Ruta> rutasExternas = obtenerDeFuente();
 MinCostFlowAssigner asignador = new MinCostFlowAssigner();
-Map<String, Vuelo> asignaciones = asignador.asignarEnviosAVuelos(rutasExternas, datos, config);
+Map<String, Ruta> rutasValidadas = asignador.asignarEnviosAVuelos(rutasExternas, datos, config);
 ```
 
 ---
 
-## Flujos de Datos
+## Flujos de datos
 
-### Fase 1: Planificación de Rutas
+### Fase 1: planificación de rutas
 
 ```
 Dataset (paquetes, vuelos, aeropuertos)
     ↓
 PlanificadorRutasStrategy.planificarRutas()
     ↓
-Map<String, List<Ruta>> rutasCandidatas
-    (ej: PKG-001 → [Ruta A, Ruta B, Ruta C])
+Map<String, Ruta>
+    (ej: PKG-001 → Ruta A)
 ```
 
-### Fase 2: Asignación Min-Cost Flow
+### Fase 2: validación determinística
 
 ```
-Map<String, List<Ruta>> rutasCandidatas
+Map<String, Ruta>
     ↓
-MinCostFlowAssigner.asignarEnviosAVuelos()
+MinCostFlowAssigner / Asignador
     ↓
-Map<String, Vuelo> asignacionesEspecificas
-    (ej: PKG-001 → Vuelo 123)
+Map<String, Ruta> validada
+    (ej: PKG-001 → Ruta A aceptada)
 ```
 
-### Orquestador: Flujo Completo
+### Orquestador: flujo completo
 
 ```
 Dataset + Config
     ↓
-Fase 1: PlanificadorRutas → Map<String, List<Ruta>>
+Fase 1: PlanificadorRutas → Map<String, Ruta>
     ↓
-Fase 2: MinCostFlow → Map<String, Vuelo>
+Fase 2: Validación → Map<String, Ruta>
     ↓
-Evaluación Final → Solucion
+Evaluación final → Solucion
 ```
 
 ---
 
-## Funciones Costo Min-Cost Flow
+## Función objetivo
 
-### Costo de Asignación
+La evaluación global vive en `PlanificacionUtils.evaluarAsignacion(...)` y combina:
 
-```
-CostoTotal = HorasTransporte + PenalizacionPlazo + FactorBalanceo
-```
+- horas totales de transporte
+- penalización por paquetes no asignados
+- penalización por entrega fuera de plazo
+- penalización por colapso operacional
 
-Donde:
-- **HorasTransporte**: `ruta.getHorasTotalesDesde(creacion)`
-- **PenalizacionPlazo**: 2500 si `llegada > plazo`, 0 en otro caso
-- **FactorBalanceo**: `(cargaVuelo / capacidadVuelo) * 100`
+La Fase 2 no reoptimiza la asignación; solo verifica si la ruta elegida sigue siendo factible.
 
 ---
 
-## Ventajas de la Arquitectura de Dos Fases
+## Ventajas de la arquitectura de dos fases
 
-1. **Separación de Responsabilidades**: 
-   - Fase 1: Optimización combinatoria de rutas
-   - Fase 2: Asignación determinística y eficiente
-
-2. **Flexibilidad**:
-   - Puedes usar cualquier metaheurístico en Fase 1
-   - Puedes cambiar la estrategia de Fase 2 sin afectar metaheurísticos
-
-3. **Reutilización**:
-   - Ambas fases pueden usarse de forma independiente
-   - Fácil integración con sistemas externos
-
-4. **Escalabilidad**:
-   - Cada fase puede optimizarse independientemente
-   - Paralelización posible en futuras versiones
-
-5. **Mantenibilidad**:
-   - Código más modular y testeable
-   - Cada fase tiene una responsabilidad clara
+1. Separa la construcción de soluciones de la validación operacional.
+2. Permite cambiar ACO o ALNS sin tocar la lógica de validación.
+3. Centraliza la evaluación global en una sola función compartida.
+4. Facilita experimentación y comparación de algoritmos.
+5. Mantiene el flujo determinista en la segunda fase.
 
 ---
 
-## Parámetros de Configuración
+## Parámetros de configuración
 
-### Min-Cost Flow
+La configuración activa del pipeline se concentra en `Main` y `StandardExperimentPipeline`:
 
-En `MinCostFlowAssigner`:
-- `COSTO_NO_ASIGNACION` = 10000.0 (penalización por no asignar)
-- `COSTO_FUERA_PLAZO` = 2500.0 (penalización por retraso)
-- `FACTOR_BALANCEO_CARGA` = 100.0 (penalización por ocupación)
-
-Estos parámetros pueden modificarse en el código fuente si es necesario.
-
----
-
-## Integración con StandardExperimentPipeline
-
-**Estado Actual**: Esta arquitectura de dos fases se integra automáticamente en `StandardExperimentPipeline`, que:
-
-1. **Carga datos automáticamente**
-2. **Calcula capacidad máxima diaria**
-3. **Genera niveles de carga** (20%-70% por defecto)
-4. **Selecciona días históricos** cercanos a cada nivel objetivo
-5. **Ejecuta múltiples corridas**:
-   - Para cada nivel de carga
-   - Para cada algoritmo (ACO + ALNS)
-   - N veces (configurable, 10 por defecto)
-6. **Detecta colapsos** (paquetes sin asignar o tardes)
-7. **Exporta resultados** a CSV para análisis estadístico (ANOVA, gráficas)
-
-### Uso Simplificado
-
-```java
-// Antes: Código manual de dos fases
-PlanificadorRutasStrategy planificador = new ACO_RutasPlanner(17L);
-TwoPhaseOrchestrator orchestrator = new TwoPhaseOrchestrator(planificador);
-Solucion solucion = orchestrator.ejecutarFlujoCompleto(datos, config);
-
-// Ahora: Automático con pipeline estándar
-java -cp out tasf.app.Main --corridas=20 --fecha-inicio-vuelos=2026-02-01
-// Genera: data/output/experimentos_raw_*.csv y experimentos_resumen_*.csv
-```
-
-Ver **[README.md](README.md)** para detalles de ejecución.
+- `--data-dir`
+- `--fecha-inicio-vuelos`
+- `--dias-vuelos`
+- `--max-envios`
+- `--corridas`
+- `--fecha-envios`
+- `--barrer-porcentaje-envios`
+- `--porcentaje-envios-inicial`
+- `--porcentaje-envios-minimo`
+- `--paso-porcentaje-envios`
+- `--semilla-alns`
+- `--semilla-aco`
 
 ---
 
-## Próximas Mejoras Sugeridas
+## Integración con `StandardExperimentPipeline`
 
-1. **Optimización de Min-Cost Flow**:
-   - Implementar algoritmo de Ciclos Negativos
-   - Integrar búsqueda local iterativa
+El pipeline estándar:
 
-2. **Parámetros Adaptativos**:
-   - Hacer configurables los costos de asignación
-   - Adaptar factores según estadísticas de ejecución
+1. Carga datos automáticamente.
+2. Calcula capacidad diaria y distribuciones.
+3. Genera niveles de carga o usa una fecha fija.
+4. Ejecuta ALNS y ACO sobre la misma entrada.
+5. Evalúa cada solución con la función global compartida.
+6. Exporta resultados raw y resumen a CSV.
 
-3. **Paralelización**:
-   - Procesar paquetes en paralelo en Fase 2
-   - Distribuir evaluación entre múltiples threads
+---
 
-4. **Análisis Avanzado**:
-   - Identificar cuellos de botella por ruta
-   - Análisis de sensibilidad de parámetros
-   - Machine Learning para predicción de desempeño
+## Próximas mejoras sugeridas
+
+1. Mejorar los operadores de reparación de ALNS.
+2. Ajustar la política local de refinamiento en ACO.
+3. Añadir métricas más detalladas de colapso.
+4. Explorar paralelización en la evaluación de corridas.
+

@@ -1,25 +1,26 @@
-# Solución de Dos Fases: Planificación de Rutas + Asignación de Envíos
+# Solución de dos fases: planificación de rutas + validación determinística
 
-## Resumen de Implementación
+## Resumen de implementación
 
-Se ha dividido exitosamente la solución en **dos fases independientes y bien definidas**:
+La solución quedó dividida en dos fases coordinadas:
 
-### ✅ Fase 1: Planificación de Rutas (Metaheurísticos)
-- **Algoritmos**: ACO (Ant Colony Optimization) y ALNS (Adaptive Large Neighborhood Search)
-- **Salida**: Rutas candidatas para cada paquete
-- **Clase Interfaz**: `PlanificadorRutasStrategy`
-- **Implementadores**: `ACO_RutasPlanner`, `ALNS_RutasPlanner`
+### Fase 1: planificación de rutas
+- Algoritmos: ACO y ALNS.
+- Salida: `Map<String, Ruta>` con una ruta seleccionada por paquete.
+- Contrato: `PlanificadorRutasStrategy`.
+- Implementadores: `ACO_RutasPlanner`, `ALNS_RutasPlanner`.
 
-### ✅ Fase 2: Asignación de Envíos a Vuelos (Determinístico)
-- **Algoritmo**: Asignador heurístico tipo min-cost con enfoque greedy
-- **Entrada**: Rutas candidatas de Fase 1
-- **Salida**: Asignación específica de paquete → vuelo
-- **Clase**: `MinCostFlowAssigner`
+### Fase 2: validación determinística
+- Algoritmo: validación operacional sobre la ruta ya elegida.
+- Entrada: `Map<String, Ruta>` producido por la Fase 1.
+- Salida: `Map<String, Ruta>` aceptada por el estado operacional.
+- Clase: `MinCostFlowAssigner`.
 
-### ✅ Orquestador
-- **Clase**: `TwoPhaseOrchestrator`
-- **Función**: Coordina ambas fases y retorna `Solucion` evaluada
+### Orquestador
+- Clase: `TwoPhaseOrchestrator`.
+- Función: coordina ambas fases y retorna una `Solucion` evaluada.
 
+La evaluación final usa la función global de `PlanificacionUtils` y no una puntuación local por paquete.
 ---
 
 ## Archivos del Proyecto
@@ -43,58 +44,47 @@ src/tasf/
 
 ---
 
-## Uso Básico
+## Uso básico
 
-### Ejemplo 1: Flujo Completo con ACO
+### Ejemplo 1: flujo completo con ACO
 
 ```java
-// Crear planificador de rutas
 PlanificadorRutasStrategy planificador = new ACO_RutasPlanner(semilla);
-
-// Crear orquestador
 TwoPhaseOrchestrator orchestrator = new TwoPhaseOrchestrator(planificador);
-
-// Ejecutar ambas fases
 Solucion solucion = orchestrator.ejecutarFlujoCompleto(datos, config);
 
 System.out.println("Costo: " + solucion.getCostoTotal());
-System.out.println("No Asignados: " + solucion.getPaquetesNoAsignados().size());
+System.out.println("No asignados: " + solucion.getPaquetesNoAsignados().size());
 ```
 
-### Ejemplo 2: Solo Fase 1 (Planificación de Rutas)
+### Ejemplo 2: solo Fase 1
 
 ```java
-// Obtener solo rutas candidatas sin asignación de vuelos
 PlanificadorRutasStrategy planificador = new ALNS_RutasPlanner(semilla);
-Map<String, List<Ruta>> rutas = planificador.planificarRutas(datos, config);
+Map<String, Ruta> rutas = planificador.planificarRutas(datos, config);
 ```
 
-### Ejemplo 3: Ambas Fases Separadas
+### Ejemplo 3: Fase 1 y Fase 2 por separado
 
 ```java
-// Fase 1
 PlanificadorRutasStrategy planificador = new ACO_RutasPlanner(semilla);
-Map<String, List<Ruta>> rutas = planificador.planificarRutas(datos, config);
+Map<String, Ruta> rutasSeleccionadas = planificador.planificarRutas(datos, config);
 
-// Fase 2
 MinCostFlowAssigner asignador = new MinCostFlowAssigner();
-Map<String, Vuelo> asignaciones = asignador.asignarEnviosAVuelos(rutas, datos, config);
+Map<String, Ruta> rutasValidadas = asignador.asignarEnviosAVuelos(rutasSeleccionadas, datos, config);
 ```
 
 ---
 
-## Función de Costo del Asignador
+## Función de costo global
 
-```
-CostoAsignacion = HorasTransporte + PenalizacionPlazo + FactorBalanceoCarga
+La evaluación global se calcula con la utilidad compartida del proyecto:
 
-Donde:
-  • HorasTransporte: duración desde creación del paquete hasta llegada
-  • PenalizacionPlazo: 2500 si sobrepasa plazo de entrega, 0 en otro caso
-  • FactorBalanceoCarga: (ocupacion_vuelo / capacidad) × 100
-```
+$$
+CostoTotal = HorasTransporte + PenalizacionNoAsignacion + PenalizacionPlazo + PenalizacionColapso
+$$
 
-**Objetivo**: Minimizar costo total respetando capacidades de vuelos
+La Fase 2 no vuelve a puntuar rutas alternativas. Solo valida la selección de la Fase 1 y actualiza el estado operacional.
 
 ---
 
@@ -111,139 +101,106 @@ Donde:
 
 ---
 
-## Flujo de Datos Visual
+## Flujo de datos visual
 
 ```
 Dataset + Config
     ↓
-    ├─ FASE 1: Planificación de Rutas
+    ├─ FASE 1: planificación de rutas
     │  (ACO o ALNS)
     │  ↓
-    │  Map<String, List<Ruta>>
-    │  (rutas candidatas)
+    │  Map<String, Ruta>
+    │  (ruta seleccionada por paquete)
     │
-    └─ FASE 2: Asignación Min-Cost Flow
+    └─ FASE 2: validación determinística
        ↓
-       Map<String, Vuelo>
-       (asignaciones específicas)
+       Map<String, Ruta>
+       (ruta aceptada)
        ↓
-       Evaluación Final
+       Evaluación global
        ↓
-       Solucion (completa)
+       Solucion completa
 ```
 
 ---
 
-## Comparación: Antes vs Después
+## Comparación: antes vs después
 
-### Antes (Acoplado)
+### Antes
 ```
-Dataset → Metaheurístico + Evaluación (todo junto) → Solucion
+Dataset → Metaheurístico + evaluación local → Solucion
 ```
-- Difícil cambiar estrategia de asignación
-- Difícil reutilizar rutas en otros contextos
-- Difícil paralelizar
+- Difícil cambiar la validación operacional.
+- Difícil comparar estrategias sin mezclar criterios.
+- Difícil reutilizar el resultado de Fase 1.
 
-### Después (Dos Fases)
+### Después
 ```
-Dataset → Fase 1: Rutas → Fase 2: Asignación → Solucion
+Dataset → Fase 1: rutas → Fase 2: validación → Solucion
 ```
-- Fácil cambiar cualquier fase
-- Fácil reutilizar componentes
-- Posibilidad de optimizar cada fase independientemente
+- La construcción y la validación quedan separadas.
+- La evaluación global se comparte entre algoritmos.
+- El pipeline puede ejecutar ALNS y ACO con la misma entrada.
 
 ---
 
----
+## Cómo se usa ahora
 
-## Cómo se Usa Ahora
+### Estado actual: `StandardExperimentPipeline`
 
-### Estado Actual: StandardExperimentPipeline
-
-**La arquitectura de dos fases está completamente integrada en `StandardExperimentPipeline`**, que automatiza el flujo completo:
+El pipeline estándar automatiza el flujo completo:
 
 ```
 Dataset
   ↓
-Capacidad Máxima Diaria
+Capacidad diaria
   ↓
-Generación de Niveles (20%-70%)
+Generación o selección de nivel de carga
   ↓
-Para cada nivel:
-  ├─ Seleccionar día histórico cercano
-  ├─ Ejecutar ALNS N veces (Fase 1 + Fase 2)
-  ├─ Ejecutar ACO N veces (Fase 1 + Fase 2)
+Para cada configuración:
+  ├─ Ejecutar ALNS
+  ├─ Ejecutar ACO
+  ├─ Validar rutas seleccionadas
   ├─ Detectar colapsos
   └─ Guardar resultados
   ↓
-Exportar CSV Raw y Resumen
+Exportar CSV raw y resumen
 ```
 
-### Compilación y Ejecución
+### Compilación y ejecución
 
 ```bash
-# Compilar
-mkdir -p out
 javac -encoding UTF-8 -d out $(find src -name "*.java")
-
-# Ejecutar (uso estándar)
 java -cp out tasf.app.Main
-
-# Ejecutar (personalizado)
 java -cp out tasf.app.Main --corridas=20 --fecha-inicio-vuelos=2026-02-01
 ```
 
-Ver **[README.md](README.md)** y **[data/README.md](data/README.md)** para detalles completos.
+Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles completos.
 
 ---
 
-## Documentación de Soporte
+## Documentación de soporte
 
-1. **[README.md](README.md)**
-   - Guía general del sistema
-   - Quick start y parámetros CLI
-   - Estructura de archivos y análisis de resultados
-
-2. **[ARQUITECTURA_DOS_FASES.md](ARQUITECTURA_DOS_FASES.md)**
-   - Descripción técnica de ambas fases
-   - Interfaces y clases principales
-   - Función de costo Min-Cost Flow
-
-3. **[data/README.md](data/README.md)**
-   - Estructura de datos de entrada/salida
-   - Formato de archivos esperados
-   - Troubleshooting
-
-4. **[GUIA_DISTRIBUCION_ENVIOS.md](GUIA_DISTRIBUCION_ENVIOS.md)**
-   - Utilidad para agrupar envíos por fecha
-   - Encontrar días cercanos a objetivo
-
-5. **[GUIA_GENERADOR_NIVELES_CARGA.md](GUIA_GENERADOR_NIVELES_CARGA.md)**
-   - Generar niveles de carga para experimentos
-   - Diferentes rangos y distribuciones
-
-6. **[GUIA_GENERADOR_NIVELES_CARGA.md](GUIA_GENERADOR_NIVELES_CARGA.md)**
-   - Generación de niveles de carga para experimentos
+- [README.md](README.md)
+- [ARQUITECTURA_DOS_FASES.md](ARQUITECTURA_DOS_FASES.md)
+- [data/README.md](data/README.md)
+- [GUIA_DISTRIBUCION_ENVIOS.md](GUIA_DISTRIBUCION_ENVIOS.md)
+- [GUIA_GENERADOR_NIVELES_CARGA.md](GUIA_GENERADOR_NIVELES_CARGA.md)
 
 ---
 
 ## Validación
 
-✅ Arquitectura de dos fases completamente funcional
-✅ StandardExperimentPipeline automatiza experimentos
-✅ Todas las utilidades (capacidad, niveles, distribución) integradas
-✅ Detección de colapsos implementada
-✅ CSV export para análisis estadístico
-✅ 32 archivos Java compilados sin errores
-✅ Documentación actualizada
+- Arquitectura de dos fases funcional.
+- Pipeline integrado en `Main`.
+- Evaluación global compartida entre ACO y ALNS.
+- CSV raw y resumen generados en `data/output/`.
 
 ---
 
-## Próximos Pasos (Opcional)
+## Próximos pasos
 
-Para usuarios avanzados que deseen customizar:
-
-1. Modificar función de costo en `MinCostFlowAssigner`
-2. Crear nuevo metaheurístico implementando `PlanificadorRutasStrategy`
-3. Agregar nuevas métricas de colapso en `ColapsoDetector`
-4. Implementar algoritmo de Ciclos Negativos en Min-Cost Flow
+1. Ajustar operadores de refinamiento.
+2. Afinar la política de aceptación de ALNS.
+3. Añadir métricas extra de colapso.
+4. Explorar paralelización de corridas.

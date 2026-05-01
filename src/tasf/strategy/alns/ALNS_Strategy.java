@@ -13,7 +13,6 @@ import tasf.strategy.PlanificadorStrategy;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -66,7 +65,7 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             RupturaResultado ruptura = aplicarRuptura(operadorRuptura, propuestaActual, solucionActual, datos, config);
 
             Map<String, Ruta> propuestaCandidata = new HashMap<>(propuestaActual);
-            // Se retira la asignacion de ruta de paquetes impactados por vuelos bloqueados.
+            // Se retira la asignacion de ruta de varios paquetes para reinsertarlos luego.
             for (String paqueteImpactadoId : ruptura.getPaquetesImpactados()) {
                 propuestaCandidata.remove(paqueteImpactadoId);
             }
@@ -104,7 +103,7 @@ public class ALNS_Strategy implements PlanificadorStrategy {
                 actualizarPesos(pesosReparacion, puntajesReparacion, usosReparacion, config.getTasaAprendizajePesos());
             }
 
-            temperatura *= 0.995;
+            temperatura = Math.max(1e-6, temperatura * 0.995);
         }
 
         Solucion salida = PlanificacionUtils.evaluarAsignacion("ALNS", propuestaMejor, datos, config);
@@ -122,7 +121,7 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         EstadoOperacional estado = new EstadoOperacional();
 
         for (Paquete paquete : paquetes) {
-            List<RutaScore> evaluadas = evaluarRutasFactibles(paquete, candidatos.getOrDefault(paquete.getId(), List.of()), estado, datos, config, Set.of());
+            List<RutaScore> evaluadas = evaluarRutasFactibles(paquete, candidatos.getOrDefault(paquete.getId(), List.of()), estado, propuesta, datos, config, Set.of());
             if (!evaluadas.isEmpty()) {
                 Ruta mejor = evaluadas.get(0).ruta;
                 estado.reservarRutaSiFactible(
@@ -141,73 +140,43 @@ public class ALNS_Strategy implements PlanificadorStrategy {
 
     private RupturaResultado aplicarRuptura(int operador, Map<String, Ruta> propuestaActual, Solucion solucionActual, Dataset datos, Config_Simulacion config) {
         if (propuestaActual.isEmpty()) {
-            return new RupturaResultado(Set.of(), Set.of());
+            return new RupturaResultado(List.of(), Set.of());
         }
 
-        Map<String, Set<String>> paquetesPorVuelo = indexarPaquetesPorVuelo(propuestaActual);
-        int totalVuelos = Math.max(1, paquetesPorVuelo.size());
-        int cantidad = Math.max(1, (int) Math.ceil(totalVuelos * config.getPorcentajeRuptura()));
+        List<String> paquetesOrdenados = new ArrayList<>(propuestaActual.keySet());
+        int cantidad = Math.max(2, (int) Math.ceil(paquetesOrdenados.size() * config.getPorcentajeRuptura()));
 
-        Set<String> vuelosBloqueados;
+        List<String> ordenReinsercion;
         if (operador == RUPTURA_WORST_DELAY) {
-            vuelosBloqueados = rupturaWorstDelay(paquetesPorVuelo, propuestaActual, solucionActual, datos, config, cantidad);
+            ordenReinsercion = rupturaWorstDelay(propuestaActual, solucionActual, datos, config, cantidad);
         } else {
-            vuelosBloqueados = rupturaRandom(paquetesPorVuelo, cantidad);
+            ordenReinsercion = rupturaRandom(paquetesOrdenados, cantidad);
         }
 
-        Set<String> paquetesImpactados = new HashSet<>();
-        for (String vueloId : vuelosBloqueados) {
-            paquetesImpactados.addAll(paquetesPorVuelo.getOrDefault(vueloId, Set.of()));
-        }
-
-        return new RupturaResultado(paquetesImpactados, vuelosBloqueados);
+        return new RupturaResultado(ordenReinsercion, Set.of());
     }
 
-    private Map<String, Set<String>> indexarPaquetesPorVuelo(Map<String, Ruta> propuestaActual) {
-        Map<String, Set<String>> paquetesPorVuelo = new HashMap<>();
-        for (Map.Entry<String, Ruta> entry : propuestaActual.entrySet()) {
-            String paqueteId = entry.getKey();
-            Ruta ruta = entry.getValue();
-            for (Vuelo vuelo : ruta.getVuelos()) {
-                paquetesPorVuelo.computeIfAbsent(vuelo.getId(), k -> new HashSet<>()).add(paqueteId);
-            }
-        }
-        return paquetesPorVuelo;
+    private List<String> rupturaRandom(List<String> paquetes, int cantidad) {
+        List<String> seleccionados = new ArrayList<>(paquetes);
+        Collections.shuffle(seleccionados, random);
+        return new ArrayList<>(seleccionados.subList(0, Math.min(cantidad, seleccionados.size())));
     }
 
-    private Set<String> rupturaRandom(Map<String, Set<String>> paquetesPorVuelo, int cantidad) {
-        List<String> vuelos = new ArrayList<>(paquetesPorVuelo.keySet());
-        Collections.shuffle(vuelos, random);
-        Set<String> bloqueados = new HashSet<>();
-        for (int i = 0; i < Math.min(cantidad, vuelos.size()); i++) {
-            bloqueados.add(vuelos.get(i));
-        }
-        return bloqueados;
-    }
-
-    private Set<String> rupturaWorstDelay(Map<String, Set<String>> paquetesPorVuelo, Map<String, Ruta> propuestaActual, Solucion solucionActual, Dataset datos, Config_Simulacion config, int cantidad) {
-        List<String> vuelos = new ArrayList<>(paquetesPorVuelo.keySet());
-        vuelos.sort((a, b) -> Double.compare(
-                scoreVueloBloqueado(b, paquetesPorVuelo, propuestaActual, solucionActual, datos, config),
-                scoreVueloBloqueado(a, paquetesPorVuelo, propuestaActual, solucionActual, datos, config)
+    private List<String> rupturaWorstDelay(Map<String, Ruta> propuestaActual, Solucion solucionActual, Dataset datos, Config_Simulacion config, int cantidad) {
+        List<String> paquetes = new ArrayList<>(propuestaActual.keySet());
+        paquetes.sort((a, b) -> Double.compare(
+                scoreDeterioro(b, propuestaActual, solucionActual, datos, config),
+                scoreDeterioro(a, propuestaActual, solucionActual, datos, config)
         ));
 
-        Set<String> bloqueados = new HashSet<>();
-        for (String vueloId : vuelos) {
-            if (bloqueados.size() >= cantidad) {
+        List<String> seleccionados = new ArrayList<>();
+        for (String paqueteId : paquetes) {
+            if (seleccionados.size() >= cantidad) {
                 break;
             }
-            bloqueados.add(vueloId);
+            seleccionados.add(paqueteId);
         }
-        return bloqueados;
-    }
-
-    private double scoreVueloBloqueado(String vueloId, Map<String, Set<String>> paquetesPorVuelo, Map<String, Ruta> propuestaActual, Solucion solucionActual, Dataset datos, Config_Simulacion config) {
-        double score = 0.0;
-        for (String paqueteId : paquetesPorVuelo.getOrDefault(vueloId, Set.of())) {
-            score += scoreDeterioro(paqueteId, propuestaActual, solucionActual, datos, config);
-        }
-        return score;
+        return seleccionados;
     }
 
     private double scoreDeterioro(String paqueteId, Map<String, Ruta> propuestaActual, Solucion solucionActual, Dataset datos, Config_Simulacion config) {
@@ -225,7 +194,7 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         return noAsignadoBonus + tardanza * 50.0 + duracion;
     }
 
-    private void aplicarReparacion(int operador, Map<String, Ruta> propuesta, Set<String> paquetesImpactados, Dataset datos, Config_Simulacion config, Map<String, List<Ruta>> candidatos, Set<String> vuelosBloqueados) {
+    private void aplicarReparacion(int operador, Map<String, Ruta> propuesta, List<String> paquetesImpactados, Dataset datos, Config_Simulacion config, Map<String, List<Ruta>> candidatos, Set<String> vuelosBloqueados) {
         if (operador == REPARACION_REGRET) {
             reparacionRegret(propuesta, paquetesImpactados, datos, config, candidatos, vuelosBloqueados);
             return;
@@ -233,14 +202,14 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         reparacionGreedy(propuesta, paquetesImpactados, datos, config, candidatos, vuelosBloqueados);
     }
 
-    private void reparacionGreedy(Map<String, Ruta> propuesta, Set<String> paquetesImpactados, Dataset datos, Config_Simulacion config, Map<String, List<Ruta>> candidatos, Set<String> vuelosBloqueados) {
+    private void reparacionGreedy(Map<String, Ruta> propuesta, List<String> paquetesImpactados, Dataset datos, Config_Simulacion config, Map<String, List<Ruta>> candidatos, Set<String> vuelosBloqueados) {
         List<String> ids = new ArrayList<>(paquetesImpactados);
-        ids.sort(Comparator.comparing(id -> PlanificacionUtils.getCreacionUtc(datos.getPaquetePorId(id), datos, config)));
+        Collections.shuffle(ids, random);
 
         EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
         for (String id : ids) {
             Paquete paquete = datos.getPaquetePorId(id);
-            List<RutaScore> factibles = evaluarRutasFactibles(paquete, candidatos.getOrDefault(id, List.of()), estado, datos, config, vuelosBloqueados);
+            List<RutaScore> factibles = evaluarRutasFactibles(paquete, candidatos.getOrDefault(id, List.of()), estado, propuesta, datos, config, vuelosBloqueados);
             if (!factibles.isEmpty()) {
                 Ruta elegida = factibles.get(0).ruta;
                 estado.reservarRutaSiFactible(
@@ -255,7 +224,7 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         }
     }
 
-    private void reparacionRegret(Map<String, Ruta> propuesta, Set<String> paquetesImpactados, Dataset datos, Config_Simulacion config, Map<String, List<Ruta>> candidatos, Set<String> vuelosBloqueados) {
+    private void reparacionRegret(Map<String, Ruta> propuesta, List<String> paquetesImpactados, Dataset datos, Config_Simulacion config, Map<String, List<Ruta>> candidatos, Set<String> vuelosBloqueados) {
         Set<String> pendientes = new HashSet<>(paquetesImpactados);
         EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
 
@@ -266,7 +235,7 @@ public class ALNS_Strategy implements PlanificadorStrategy {
 
             for (String id : pendientes) {
                 Paquete paquete = datos.getPaquetePorId(id);
-                List<RutaScore> factibles = evaluarRutasFactibles(paquete, candidatos.getOrDefault(id, List.of()), estado, datos, config, vuelosBloqueados);
+                List<RutaScore> factibles = evaluarRutasFactibles(paquete, candidatos.getOrDefault(id, List.of()), estado, propuesta, datos, config, vuelosBloqueados);
                 if (factibles.isEmpty()) {
                     continue;
                 }
@@ -299,7 +268,15 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         }
     }
 
-    private List<RutaScore> evaluarRutasFactibles(Paquete paquete, List<Ruta> rutas, EstadoOperacional estado, Dataset datos, Config_Simulacion config, Set<String> vuelosBloqueados) {
+    private List<RutaScore> evaluarRutasFactibles(
+            Paquete paquete,
+            List<Ruta> rutas,
+            EstadoOperacional estado,
+            Map<String, Ruta> propuestaBase,
+            Dataset datos,
+            Config_Simulacion config,
+            Set<String> vuelosBloqueados
+    ) {
         List<RutaScore> resultado = new ArrayList<>();
         LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(paquete, datos, config);
 
@@ -312,7 +289,10 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             if (!factible) {
                 continue;
             }
-            resultado.add(new RutaScore(ruta, scoreRuta(paquete, ruta, datos, config)));
+            Map<String, Ruta> tentativa = new HashMap<>(propuestaBase);
+            tentativa.put(paquete.getId(), ruta);
+            double scoreGlobal = PlanificacionUtils.evaluarAsignacion("ALNS", tentativa, datos, config).getCostoTotal();
+            resultado.add(new RutaScore(ruta, scoreGlobal));
         }
 
         resultado.sort(Comparator.comparingDouble(r -> r.score));
@@ -335,14 +315,6 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         double delta = solucionCandidata.getCostoTotal() - solucionActual.getCostoTotal();
         double probAceptacion = Math.exp(-delta / Math.max(1e-9, temperatura));
         return random.nextDouble() < probAceptacion;
-    }
-
-    private double scoreRuta(Paquete paquete, Ruta ruta, Dataset datos, Config_Simulacion config) {
-        LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(paquete, datos, config);
-        LocalDateTime limite = creacion.plus(PlanificacionUtils.getPlazoObjetivo(paquete, datos, config));
-        long tardanza = Math.max(0L, Duration.between(limite, ruta.getLlegadaUtc()).toMinutes());
-        long llegada = ruta.getLlegadaUtc().toEpochSecond(ZoneOffset.UTC);
-        return llegada + (tardanza * 1000.0) + (ruta.getCantidadSaltos() * 50.0);
     }
 
     private int seleccionarPorRuleta(double[] pesos) {
@@ -384,15 +356,15 @@ public class ALNS_Strategy implements PlanificadorStrategy {
     }
 
     private static class RupturaResultado {
-        private final Set<String> paquetesImpactados;
+        private final List<String> paquetesImpactados;
         private final Set<String> vuelosBloqueados;
 
-        private RupturaResultado(Set<String> paquetesImpactados, Set<String> vuelosBloqueados) {
+        private RupturaResultado(List<String> paquetesImpactados, Set<String> vuelosBloqueados) {
             this.paquetesImpactados = paquetesImpactados;
             this.vuelosBloqueados = vuelosBloqueados;
         }
 
-        private Set<String> getPaquetesImpactados() {
+        private List<String> getPaquetesImpactados() {
             return paquetesImpactados;
         }
 

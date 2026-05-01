@@ -275,7 +275,7 @@ public final class StandardExperimentPipeline {
 
     private Dataset construirDatasetDia(Dataset base, List<Paquete> paquetesDia) {
         Dataset dia = new Dataset(base.getAeropuertos(), base.getVuelos(), new ArrayList<>(paquetesDia));
-        System.out.println("[DATASET DIA] paquetes=" + dia.getPaquetes().size() + " vuelos=" + dia.getVuelos().size() + " vuelosEBCI=" + dia.getVuelosDesde("EBCI").size());
+        System.out.println("[DATASET DIA] paquetes=" + dia.getPaquetes().size() + " vuelos=" + dia.getVuelos().size());
         return dia;
     }
 

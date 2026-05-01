@@ -2,9 +2,7 @@
 
 ## 📋 ¿Qué es?
 
-Clase Java que genera **niveles de carga para experimentos logísticos**.
-
-Dado una capacidad máxima diaria, genera una lista de valores en maletas que representan diferentes porcentajes de carga.
+Clase Java que genera niveles de carga para experimentos logísticos. En el pipeline actual alimenta `StandardExperimentPipeline`, que compara ACO y ALNS sobre varios niveles de carga derivados de una capacidad máxima diaria.
 
 ---
 

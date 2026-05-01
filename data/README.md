@@ -67,14 +67,15 @@ java -cp out tasf.app.Main
 ```
 
 Ejecuta el pipeline con configuración por defecto:
-- Datos de `data/` 
-- **Carga TODOS los vuelos disponibles** (`--dias-vuelos=0` por defecto)
-- Ejecuta ambos algoritmos (ALNS + ACO) con 10 corridas cada uno
-- Genera 5 niveles de carga (20%-70% del máximo paquetes diarios)
-- Para cada nivel: busca el día histórico con cantidad de paquetes más cercana
-- Exporta CSV a `data/output/`
+- Datos de `data/`
+- Carga todos los vuelos disponibles (`--dias-vuelos=0` por defecto).
+- Ejecuta ALNS y ACO con 10 corridas cada uno.
+- Cada algoritmo produce una solución paquete -> ruta y luego pasa por la validación determinística de Fase 2.
+- Genera 5 niveles de carga (20%-70% del máximo de paquetes diarios).
+- Para cada nivel busca el día histórico con cantidad de paquetes más cercana.
+- Exporta CSV a `data/output/`.
 
-**⚠️ Nota Importante**: El sistema SIEMPRE ejecuta AMBOS algoritmos. No hay opción para usar solo uno.
+**Nota**: el pipeline siempre ejecuta ambos algoritmos; no hay modo interactivo para correr solo uno.
 
 ### Opción B: Comandos Personalizados
 
