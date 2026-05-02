@@ -11,11 +11,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -35,12 +39,65 @@ public final class DatasetTextoLoader {
             int diasVuelos,
             int maxEnviosPorArchivo
     ) throws IOException {
+        return cargarDataset(carpetaDatos, fechaInicio, diasVuelos, maxEnviosPorArchivo, null);
+    }
+
+    public static Dataset cargarDataset(
+            Path carpetaDatos,
+            LocalDate fechaInicio,
+            int diasVuelos,
+            int maxEnviosPorArchivo,
+            Set<LocalDate> fechasFiltro
+    ) throws IOException {
         RutasDataset rutas = resolverRutas(carpetaDatos);
 
         Map<String, Aeropuerto> aeropuertos = cargarAeropuertos(rutas.archivoAeropuertos());
-        List<Vuelo> vuelos = PlanesVueloParser.parse(rutas.archivoPlanesVuelo(), fechaInicio, diasVuelos, aeropuertos);
-        List<Paquete> paquetes = cargarPaquetes(rutas.carpetaEnvios(), maxEnviosPorArchivo, aeropuertos);
+        int diasReales = diasVuelos > 0 ? diasVuelos : calcularDiasVuelos(fechasFiltro, fechaInicio);
+        List<Vuelo> vuelos = PlanesVueloParser.parse(rutas.archivoPlanesVuelo(), fechaInicio, diasReales, aeropuertos);
+        List<Paquete> paquetes = cargarPaquetes(rutas.carpetaEnvios(), maxEnviosPorArchivo, aeropuertos, fechasFiltro);
         return new Dataset(aeropuertos, vuelos, paquetes);
+    }
+
+    public static Map<LocalDate, Integer> escanearConteoPorDia(Path carpetaEnvios) throws IOException {
+        Map<LocalDate, Integer> conteo = new HashMap<>();
+        DateTimeFormatter fmt = DateTimeFormatter.BASIC_ISO_DATE;
+
+        try (Stream<Path> stream = Files.list(carpetaEnvios)) {
+            stream
+                    .filter(Files::isRegularFile)
+                    .filter(p -> PATRON_ARCHIVO_ENVIOS.matcher(p.getFileName().toString()).matches())
+                    .forEach(archivo -> {
+                        try (Stream<String> lineas = Files.lines(archivo, StandardCharsets.UTF_8)) {
+                            lineas.forEach(raw -> {
+                                String linea = raw.trim();
+                                if (linea.isEmpty()) return;
+                                int dash1 = linea.indexOf('-');
+                                if (dash1 < 0) return;
+                                int dash2 = linea.indexOf('-', dash1 + 1);
+                                if (dash2 < 0) return;
+                                String fechaStr = linea.substring(dash1 + 1, dash2);
+                                if (fechaStr.length() != 8) return;
+                                try {
+                                    LocalDate fecha = LocalDate.parse(fechaStr, fmt);
+                                    conteo.merge(fecha, 1, Integer::sum);
+                                } catch (DateTimeParseException ignored) {
+                                }
+                            });
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    });
+        }
+        return conteo;
+    }
+
+    private static int calcularDiasVuelos(Set<LocalDate> fechasFiltro, LocalDate fechaInicio) {
+        if (fechasFiltro == null || fechasFiltro.isEmpty()) {
+            return 1095;
+        }
+        LocalDate maxFecha = fechasFiltro.stream().max(LocalDate::compareTo).orElse(fechaInicio);
+        long diff = maxFecha.toEpochDay() - fechaInicio.toEpochDay();
+        return Math.max(1, (int) diff + 13);
     }
 
     public static String descripcionEstructuraEsperada(Path carpetaDatos) {
@@ -149,8 +206,12 @@ public final class DatasetTextoLoader {
     private static List<Paquete> cargarPaquetes(
             Path carpetaEnvios,
             int maxEnviosPorArchivo,
-            Map<String, Aeropuerto> aeropuertos
+            Map<String, Aeropuerto> aeropuertos,
+            Set<LocalDate> fechasFiltro
     ) throws IOException {
+        boolean filtrarPorFecha = fechasFiltro != null && !fechasFiltro.isEmpty();
+        DateTimeFormatter fmt = DateTimeFormatter.BASIC_ISO_DATE;
+
         List<Paquete> paquetes = new ArrayList<>();
         List<Path> archivos = new ArrayList<>();
 
@@ -174,8 +235,24 @@ public final class DatasetTextoLoader {
 
             try (Stream<String> lineas = Files.lines(archivo, StandardCharsets.UTF_8)) {
                 Stream<String> flujo = lineas.map(String::trim)
-                        .filter(s -> !s.isEmpty())
-                        ;
+                        .filter(s -> !s.isEmpty());
+
+                if (filtrarPorFecha) {
+                    flujo = flujo.filter(raw -> {
+                        int dash1 = raw.indexOf('-');
+                        if (dash1 < 0) return false;
+                        int dash2 = raw.indexOf('-', dash1 + 1);
+                        if (dash2 < 0) return false;
+                        String fechaStr = raw.substring(dash1 + 1, dash2);
+                        if (fechaStr.length() != 8) return false;
+                        try {
+                            LocalDate fecha = LocalDate.parse(fechaStr, fmt);
+                            return fechasFiltro.contains(fecha);
+                        } catch (DateTimeParseException e) {
+                            return false;
+                        }
+                    });
+                }
 
                 if (maxEnviosPorArchivo > 0) {
                     flujo = flujo.limit(maxEnviosPorArchivo);
@@ -199,7 +276,6 @@ public final class DatasetTextoLoader {
                                         parsed.getReferencia()
                                 ));
                             } catch (RuntimeException ignored) {
-                                // Saltamos lineas mal formadas para mantener la simulacion corriendo.
                             }
                         });
             }

@@ -33,6 +33,8 @@ public class RouteFinder {
         Set<String> visitados = new HashSet<>();
         visitados.add(origen);
 
+        List<Vuelo> candidatosIniciales = datos.getVuelosDesde(origen, disponibleDesdeUtc, horizonteBusqueda);
+
         explorar(
                 origen,
                 destino,
@@ -44,7 +46,8 @@ public class RouteFinder {
                 visitados,
                 actual,
                 rutas,
-                maxRutas * 4
+                maxRutas * 4,
+                candidatosIniciales
         );
 
         rutas.sort(
@@ -69,7 +72,8 @@ public class RouteFinder {
             Set<String> visitados,
             ArrayDeque<Vuelo> rutaActual,
             List<Ruta> rutas,
-            int limiteInterno
+            int limiteInterno,
+            List<Vuelo> candidatosPreFiltrados
     ) {
         if (rutas.size() >= limiteInterno) {
             return;
@@ -84,15 +88,22 @@ public class RouteFinder {
             return;
         }
 
-        List<Vuelo> candidatos = datos.getVuelosDesde(aeropuertoActual);
+        List<Vuelo> candidatos;
+        if (!rutaActual.isEmpty()) {
+            candidatos = datos.getVuelosDesde(aeropuertoActual, instanteActual.plus(minimaConexion), horizonteBusqueda);
+        } else {
+            candidatos = candidatosPreFiltrados;
+        }
+
+        LocalDateTime finVentana = inicioBusqueda.plus(horizonteBusqueda);
 
         for (Vuelo vuelo : candidatos) {
-            Duration esperaRequerida = rutaActual.isEmpty() ? Duration.ZERO : minimaConexion;
-            if (vuelo.getSalidaUtc().isBefore(instanteActual.plus(esperaRequerida))) {
-                continue;
+            if (rutas.size() >= limiteInterno) {
+                break;
             }
-            if (vuelo.getSalidaUtc().isAfter(inicioBusqueda.plus(horizonteBusqueda))) {
-                continue;
+
+            if (vuelo.getSalidaUtc().isAfter(finVentana)) {
+                break;
             }
 
             String siguiente = vuelo.getDestino().getCodigoOACI();
@@ -114,7 +125,8 @@ public class RouteFinder {
                     visitados,
                     rutaActual,
                     rutas,
-                    limiteInterno
+                    limiteInterno,
+                    candidatos
             );
 
             if (agregado) {
@@ -122,6 +134,5 @@ public class RouteFinder {
             }
             rutaActual.removeLast();
         }
-        
     }
 }

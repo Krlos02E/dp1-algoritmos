@@ -5,6 +5,8 @@ import tasf.model.Paquete;
 import tasf.model.Tramo;
 import tasf.model.Vuelo;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -64,6 +66,37 @@ public class Dataset {
 
     public List<Vuelo> getVuelosDesde(String origenOACI) {
         return vuelosPorOrigen.getOrDefault(origenOACI, Collections.emptyList());
+    }
+
+    public List<Vuelo> getVuelosDesde(String origenOACI, LocalDateTime desdeUtc, Duration horizonteBusqueda) {
+        List<Vuelo> lista = vuelosPorOrigen.get(origenOACI);
+        if (lista == null || lista.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        LocalDateTime finUtc = desdeUtc.plus(horizonteBusqueda);
+
+        int inicio = buscarPrimerVueloDespues(lista, desdeUtc);
+        int fin = buscarPrimerVueloDespues(lista, finUtc);
+
+        if (inicio >= lista.size()) {
+            return Collections.emptyList();
+        }
+        return lista.subList(inicio, Math.min(fin, lista.size()));
+    }
+
+    private int buscarPrimerVueloDespues(List<Vuelo> lista, LocalDateTime instante) {
+        int bajo = 0;
+        int alto = lista.size();
+        while (bajo < alto) {
+            int medio = (bajo + alto) >>> 1;
+            if (lista.get(medio).getSalidaUtc().isBefore(instante)) {
+                bajo = medio + 1;
+            } else {
+                alto = medio;
+            }
+        }
+        return bajo;
     }
 
     public Set<Tramo> getTodosLosTramos() {

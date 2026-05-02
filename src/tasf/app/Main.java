@@ -96,7 +96,7 @@ public class Main {
         private static ParametrosCli desdeArgs(String[] args) {
             Path dataDir = Path.of("data").toAbsolutePath().normalize();
             LocalDate fechaInicioVuelos = LocalDate.of(2026, 1, 2);
-            int diasVuelos = 0;  // 0 = cargar TODOS los vuelos disponibles (2 años de cobertura)
+            int diasVuelos = 0;  // 0 = cargar TODOS los vuelos disponibles (~3 años / 1095 días)
             int maxEnviosPorArchivo = 0;
             int corridasPorAlgoritmo = 10;
             LocalDate fechaEnviosFiltro = null;

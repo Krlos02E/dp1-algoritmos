@@ -43,23 +43,21 @@ public class TwoPhaseOrchestrator {
      * @return Solución evaluada
      */
     public Solucion ejecutarFlujoCompleto(Dataset datos, Config_Simulacion config) {
-        // ==================== FASE 1: PLANIFICACIÓN DE RUTAS ====================
         long t1 = System.nanoTime();
         Map<String, Ruta> rutasSeleccionadas = planificador.planificarRutas(datos, config);
         long ms1 = (System.nanoTime() - t1) / 1_000_000;
-        System.err.println("[DEBUG] Fase 1: paquetes=" + rutasSeleccionadas.size() + " con ruta seleccionada, tiempo=" + ms1 + "ms");
 
-        // ==================== FASE 2: ASIGNACIÓN DE ENVÍOS A VUELOS ====================
         long t2 = System.nanoTime();
         Map<String, Ruta> rutasAceptadas = asignador.asignar(rutasSeleccionadas, datos, config);
         long ms2 = (System.nanoTime() - t2) / 1_000_000;
-        System.err.println("[DEBUG] Fase 2: rutas aceptadas=" + rutasAceptadas.size() + ", tiempo=" + ms2 + "ms");
 
-        // ==================== EVALUACIÓN Y GENERACIÓN DE SOLUCIÓN ====================
         long t3 = System.nanoTime();
         Solucion solucion = evaluarSolucionCompleta(rutasAceptadas, datos, config);
         long ms3 = (System.nanoTime() - t3) / 1_000_000;
-        System.err.println("[DEBUG] Fase 3: evaluación=" + solucion.getRutasAsignadas().size() + " asignadas, tiempo=" + ms3 + "ms");
+
+        solucion.setMetrica("msFase1Rutas", ms1);
+        solucion.setMetrica("msFase2Asignacion", ms2);
+        solucion.setMetrica("msFase3Evaluacion", ms3);
 
         return solucion;
     }
