@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Set;
 
 public class RouteFinder {
+    private static final long TIMEOUT_NS = 30_000_000L;
+
     private final Dataset datos;
 
     public RouteFinder(Dataset datos) {
@@ -34,26 +36,17 @@ public class RouteFinder {
         visitados.add(origen);
 
         List<Vuelo> candidatosIniciales = datos.getVuelosDesde(origen, disponibleDesdeUtc, horizonteBusqueda);
+        long deadline = System.nanoTime() + TIMEOUT_NS;
 
         explorar(
-                origen,
-                destino,
-                disponibleDesdeUtc,
-                disponibleDesdeUtc,
-                maxEscalas,
-                minimaConexion,
-                horizonteBusqueda,
-                visitados,
-                actual,
-                rutas,
-                maxRutas * 4,
-                candidatosIniciales
+                origen, destino, disponibleDesdeUtc, disponibleDesdeUtc,
+                maxEscalas, minimaConexion, horizonteBusqueda,
+                visitados, actual, rutas, maxRutas * 4,
+                candidatosIniciales, deadline
         );
 
         rutas.sort(
-            Comparator
-                .comparing(Ruta::getLlegadaUtc)
-                .thenComparingInt(Ruta::getCantidadSaltos)
+            Comparator.comparing(Ruta::getLlegadaUtc).thenComparingInt(Ruta::getCantidadSaltos)
         );
         if (rutas.size() > maxRutas) {
             return new ArrayList<>(rutas.subList(0, maxRutas));
@@ -62,52 +55,40 @@ public class RouteFinder {
     }
 
     private void explorar(
-            String aeropuertoActual,
-            String destino,
-            LocalDateTime instanteActual,
-            LocalDateTime inicioBusqueda,
-            int maxEscalas,
-            Duration minimaConexion,
-            Duration horizonteBusqueda,
-            Set<String> visitados,
-            ArrayDeque<Vuelo> rutaActual,
-            List<Ruta> rutas,
-            int limiteInterno,
-            List<Vuelo> candidatosPreFiltrados
+            String aeropuertoActual, String destino,
+            LocalDateTime instanteActual, LocalDateTime inicioBusqueda,
+            int maxEscalas, Duration minimaConexion, Duration horizonteBusqueda,
+            Set<String> visitados, ArrayDeque<Vuelo> rutaActual,
+            List<Ruta> rutas, int limiteInterno,
+            List<Vuelo> candidatosIniciales, long deadline
     ) {
-        if (rutas.size() >= limiteInterno) {
-            return;
-        }
-
+        if (rutas.size() >= limiteInterno) return;
+        if (System.nanoTime() >= deadline) return;
         if (aeropuertoActual.equals(destino) && !rutaActual.isEmpty()) {
             rutas.add(new Ruta(new ArrayList<>(rutaActual)));
             return;
         }
-
-        if (rutaActual.size() > maxEscalas) {
-            return;
-        }
+        if (rutaActual.size() >= maxEscalas) return;
 
         List<Vuelo> candidatos;
         if (!rutaActual.isEmpty()) {
-            candidatos = datos.getVuelosDesde(aeropuertoActual, instanteActual.plus(minimaConexion), horizonteBusqueda);
+            LocalDateTime desde = instanteActual.plus(minimaConexion);
+            candidatos = datos.getVuelosDesde(aeropuertoActual, desde, horizonteBusqueda);
         } else {
-            candidatos = candidatosPreFiltrados;
+            candidatos = candidatosIniciales;
         }
 
         LocalDateTime finVentana = inicioBusqueda.plus(horizonteBusqueda);
-
         for (Vuelo vuelo : candidatos) {
-            if (rutas.size() >= limiteInterno) {
-                break;
-            }
-
-            if (vuelo.getSalidaUtc().isAfter(finVentana)) {
-                break;
-            }
+            if (rutas.size() >= limiteInterno) break;
+            if (System.nanoTime() >= deadline) break;
+            if (vuelo.getSalidaUtc().isAfter(finVentana)) break;
 
             String siguiente = vuelo.getDestino().getCodigoOACI();
-            if (visitados.contains(siguiente) && !siguiente.equals(destino)) {
+            if (visitados.contains(siguiente) && !siguiente.equals(destino)) continue;
+
+            int escalasRestantes = maxEscalas - rutaActual.size();
+            if (!siguiente.equals(destino) && escalasRestantes > 1 && !datos.puedeLlegarA(siguiente, destino, escalasRestantes - 1)) {
                 continue;
             }
 
@@ -115,23 +96,13 @@ public class RouteFinder {
             boolean agregado = visitados.add(siguiente);
 
             explorar(
-                    siguiente,
-                    destino,
-                    vuelo.getLlegadaUtc(),
-                    inicioBusqueda,
-                    maxEscalas,
-                    minimaConexion,
-                    horizonteBusqueda,
-                    visitados,
-                    rutaActual,
-                    rutas,
-                    limiteInterno,
-                    candidatos
+                    siguiente, destino, vuelo.getLlegadaUtc(), inicioBusqueda,
+                    maxEscalas, minimaConexion, horizonteBusqueda,
+                    visitados, rutaActual, rutas, limiteInterno,
+                    null, deadline
             );
 
-            if (agregado) {
-                visitados.remove(siguiente);
-            }
+            if (agregado) visitados.remove(siguiente);
             rutaActual.removeLast();
         }
     }

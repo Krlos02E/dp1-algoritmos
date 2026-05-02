@@ -118,6 +118,7 @@ public final class StandardExperimentPipeline {
 
     public PipelineResult ejecutar() throws IOException {
         long tPipeline = System.nanoTime();
+        PlanificacionUtils.limpiarCacheGlobal();
 
         // Paso 1: Escaneo liviano para determinar fechas objetivo ANTES de cargar datos
         Map<LocalDate, Integer> conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
@@ -199,13 +200,13 @@ public final class StandardExperimentPipeline {
             // Buffer de 13 dias despues del dia de envio para permitir entregas multi-vuelo
             long buffer = 13;
             if (diasDesdeInicio + buffer > diasVuelos) {
-                // El dia de envio + buffer no entra en la ventana si empezamos en fechaInicioVuelos
-                // Desplazar el inicio para que el fin de la ventana cubra maxFecha + buffer
-                fechaInicioEfectiva = maxFecha.plusDays(buffer - diasVuelos + 1);
+                // La ventana es muy corta para cubrir desde fechaInicioVuelos hasta maxFecha + buffer.
+                // Centrar la ventana en maxFecha, asegurando que cubra el dia de envio.
+                fechaInicioEfectiva = maxFecha.minusDays(diasVuelos - 1);
+                diasVuelosEfectivos = diasVuelos;
             } else {
-                // La ventana original ya cubre el dia de envio
+                // La ventana original ya cubre el dia de envio + buffer.
                 fechaInicioEfectiva = fechaInicioVuelos;
-                // Recortar diasVuelos para que termine en maxFecha + buffer (sin desperdiciar)
                 diasVuelosEfectivos = (int) (diasDesdeInicio + buffer) + 1;
             }
             ventanaFin = fechaInicioEfectiva.plusDays(diasVuelosEfectivos - 1);
@@ -231,7 +232,7 @@ public final class StandardExperimentPipeline {
                 ventanaStr,
                 msLoad));
 
-        Config_Simulacion config = construirConfig();
+        Config_Simulacion config = construirConfig(dataset.getPaquetes().size());
 
         DistribucionEnviosPorDia distribucionEnvios = new DistribucionEnviosPorDia(dataset.getPaquetes());
 
@@ -403,24 +404,36 @@ public final class StandardExperimentPipeline {
         return new ArrayList<>(ordenados.subList(0, cantidad));
     }
 
-    private Config_Simulacion construirConfig() {
+    private Config_Simulacion construirConfig(int totalPaquetes) {
         Config_Simulacion config = new Config_Simulacion();
         config.setPlazoMismoContinente(Duration.ofHours(24));
         config.setPlazoIntercontinental(Duration.ofHours(48));
         config.setMinimaConexion(Duration.ofMinutes(30));
-        config.setHorizonteBusqueda(Duration.ofHours(240));  // 10 días para compensar timezone offsets
-        config.setIteracionesALNS(3);
-        config.setIteracionesACO(2);
-        config.setHormigasACO(3);
+        // Horizonte adaptativo: no buscar más allá de los vuelos cargados
+        int diasDisponibles = diasVuelos > 0 ? diasVuelos : 1095;
+        long horasMaximas = Math.min(240L, diasDisponibles * 24L);
+        config.setHorizonteBusqueda(Duration.ofHours(horasMaximas));
+        // Escalas adaptativas: con pocos días no hay tiempo para 3 conexiones
+        int maxEscalas = diasDisponibles <= 3 ? 2 : 3;
+        config.setMaxEscalas(maxEscalas);
+        // Iteraciones y hormigas adaptativas: con muchos paquetes reducir para no explotar
+        boolean muchosPaquetes = totalPaquetes > 5000;
+        config.setIteracionesALNS(muchosPaquetes ? 1 : 3);
+        config.setIteracionesACO(muchosPaquetes ? 1 : 2);
+        config.setHormigasACO(muchosPaquetes ? 2 : 3);
         config.setTopRutasACO(2);
         config.setHormigasEliteACO(1);
         config.setFactorEliteACO(1.6);
         config.setFactorGlobalBestACO(2.6);
         config.setAlphaACO(0.9);
         config.setBetaACO(3.2);
-        config.setMaxEscalas(3);
-        config.setMaxRutasPorPaquete(6);
+        config.setMaxRutasPorPaquete(muchosPaquetes ? 3 : 6);
         config.setVentanaActualizacionPesos(10);
+        if (muchosPaquetes) {
+            System.out.println(String.format(Locale.ROOT,
+                    "  [ADAPTIVO] paquetes=%d → iteraciones=ALNS(1)/ACO(1), hormigasACO=2, maxEscalas=%d",
+                    totalPaquetes, maxEscalas));
+        }
         return config;
     }
 

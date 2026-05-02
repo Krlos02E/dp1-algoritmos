@@ -24,6 +24,7 @@ public class Dataset {
     private final Map<String, List<Vuelo>> vuelosPorOrigen;
     private final Map<String, Paquete> paquetesPorId;
     private final Map<String, Map<String, Integer>> cacheSaltos;
+    private final Map<String, Set<String>> destinosPorOrigenYEscalas;
 
     public Dataset(Map<String, Aeropuerto> aeropuertos, List<Vuelo> vuelos, List<Paquete> paquetes) {
         this.aeropuertos = Collections.unmodifiableMap(new HashMap<>(aeropuertos));
@@ -42,6 +43,50 @@ public class Dataset {
         for (Paquete paquete : paquetes) {
             paquetesPorId.put(paquete.getId(), paquete);
         }
+
+        destinosPorOrigenYEscalas = new HashMap<>();
+        precalcularDestinosAlcanzables();
+    }
+
+    private void precalcularDestinosAlcanzables() {
+        int maxEscalas = 3;
+        Set<String> aeropuertos = vuelosPorOrigen.keySet();
+        for (String origen : aeropuertos) {
+            for (int escalas = 0; escalas <= maxEscalas; escalas++) {
+                String key = origen + "|" + escalas;
+                destinosPorOrigenYEscalas.put(key, encontrarDestinos(origen, escalas));
+            }
+        }
+    }
+
+    private Set<String> encontrarDestinos(String origen, int maxEscalas) {
+        Set<String> alcanzables = new HashSet<>();
+        Set<String> actuales = new HashSet<>();
+        actuales.add(origen);
+
+        for (int salto = 0; salto <= maxEscalas; salto++) {
+            Set<String> siguientes = new HashSet<>();
+            for (String actual : actuales) {
+                List<Vuelo> vuelos = vuelosPorOrigen.get(actual);
+                if (vuelos != null) {
+                    for (Vuelo v : vuelos) {
+                        String dest = v.getDestino().getCodigoOACI();
+                        if (alcanzables.add(dest)) {
+                            siguientes.add(dest);
+                        }
+                    }
+                }
+            }
+            actuales = siguientes;
+            if (actuales.isEmpty()) break;
+        }
+        return alcanzables;
+    }
+
+    public boolean puedeLlegarA(String origen, String destino, int maxEscalas) {
+        String key = origen + "|" + maxEscalas;
+        Set<String> alcanzables = destinosPorOrigenYEscalas.get(key);
+        return alcanzables != null && alcanzables.contains(destino);
     }
 
     public Map<String, Aeropuerto> getAeropuertos() {

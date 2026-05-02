@@ -7,15 +7,27 @@ import tasf.model.Ruta;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public final class PlanificacionUtils {
     private PlanificacionUtils() {
+    }
+
+    private static volatile Map<String, List<Ruta>> CACHE_GLOBAL_RUTAS = new HashMap<>();
+
+    public static void limpiarCacheGlobal() {
+        CACHE_GLOBAL_RUTAS = new HashMap<>();
     }
 
     public static LocalDateTime getCreacionUtc(Paquete paquete, Dataset datos, Config_Simulacion config) {
@@ -129,46 +141,118 @@ public final class PlanificacionUtils {
         return solucion;
     }
 
+    /**
+     * Score local y rápido para un solo paquete+ruta. NO itera todo el dataset.
+     * Úsese dentro de bucles metaheurísticos donde evaluarAsignacion() es prohibitivo.
+     *
+     * Penaliza: fuera de plazo (2500), colapso potencial (500), horas totales, escalas extras.
+     */
+    public static double evaluarRutaIndividual(
+            Paquete paquete,
+            Ruta ruta,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        if (ruta == null) {
+            return 10000.0; // costo de no asignar
+        }
+        if (estaFueraDeVentanaSimulacion(ruta, config)) {
+            return 10000.0;
+        }
+        LocalDateTime creacion = getCreacionUtc(paquete, datos, config);
+        double horas = ruta.getHorasTotalesDesde(creacion);
+        double costoFueraPlazo = estaFueraDePlazo(paquete, ruta, datos, config) ? 2500.0 : 0.0;
+        // Penalizar escalas adicionales: cada escala extra añade riesgo de retraso
+        double costoEscalas = ruta.getCantidadSaltos() * 500.0;
+        return costoFueraPlazo + costoEscalas + horas;
+    }
+
     public static Map<String, List<Ruta>> construirCandidatosRutas(
             Dataset datos,
             Config_Simulacion config,
             RouteFinder finder
     ) {
         Map<String, List<Ruta>> candidatos = new HashMap<>();
-        Map<String, List<Ruta>> cacheConsulta = new HashMap<>();
 
+        // Paso 1: Identificar pares origen-destino que necesitan búsqueda
+        Set<String> paresPendientes = new HashSet<>();
+        Map<String, LocalDateTime> primerCreacionPorPar = new HashMap<>();
+        for (Paquete paquete : datos.getPaquetes()) {
+            String key = paquete.getOrigenOACI() + "|" + paquete.getDestinoOACI();
+            if (!CACHE_GLOBAL_RUTAS.containsKey(key)) {
+                paresPendientes.add(key);
+                primerCreacionPorPar.putIfAbsent(key, getCreacionUtc(paquete, datos, config));
+            }
+        }
+
+        // Paso 2: Buscar rutas pendientes en paralelo
+        if (!paresPendientes.isEmpty()) {
+            int hilos = Math.min(Runtime.getRuntime().availableProcessors(), paresPendientes.size());
+            ExecutorService pool = Executors.newFixedThreadPool(hilos);
+            final int total = paresPendientes.size();
+            final long t0 = System.nanoTime();
+
+            List<String> paresLista = new ArrayList<>(paresPendientes);
+            for (int i = 0; i < paresLista.size(); i++) {
+                final int idx = i;
+                final String par = paresLista.get(i);
+                pool.submit(() -> {
+                    String[] partes = par.split("\\|");
+                    LocalDateTime creacionUtc = primerCreacionPorPar.getOrDefault(par,
+                            LocalDateTime.of(2026, 1, 1, 0, 0));
+                    List<Ruta> rutas = finder.buscarRutas(
+                            partes[0], partes[1], creacionUtc,
+                            config.getMaxRutasPorPaquete(),
+                            config.getMaxEscalas(),
+                            config.getMinimaConexion(),
+                            config.getHorizonteBusqueda()
+                    );
+                    if (config.getFinSimulacionUtcExclusivo() != null) {
+                        List<Ruta> filtradas = new ArrayList<>();
+                        for (Ruta r : rutas) {
+                            if (!estaFueraDeVentanaSimulacion(r, config)) filtradas.add(r);
+                        }
+                        rutas = filtradas;
+                    }
+                    CACHE_GLOBAL_RUTAS.put(par, rutas);
+
+                    int completados = (idx + 1);
+                    if (completados % 20 == 0 || completados == total) {
+                        long ms = (System.nanoTime() - t0) / 1_000_000;
+                        System.out.println(String.format(Locale.ROOT,
+                                "  [RUTAS] %d/%d pares encontrados [%dms]",
+                                completados, total, ms));
+                    }
+                });
+            }
+            pool.shutdown();
+            try { pool.awaitTermination(10, TimeUnit.MINUTES); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
+
+        // Paso 3: Filtrar rutas cacheadas por tiempo de cada paquete
         for (Paquete paquete : datos.getPaquetes()) {
             LocalDateTime creacionUtc = getCreacionUtc(paquete, datos, config);
-            LocalDateTime bucket = creacionUtc.truncatedTo(ChronoUnit.HOURS);
-            String keyCache = paquete.getOrigenOACI() + "|" + paquete.getDestinoOACI() + "|" + bucket;
+            String key = paquete.getOrigenOACI() + "|" + paquete.getDestinoOACI();
+            List<Ruta> cacheadas = CACHE_GLOBAL_RUTAS.get(key);
 
-            List<Ruta> rutas = cacheConsulta.get(keyCache);
-            if (rutas == null) {
-                rutas = finder.buscarRutas(
-                        paquete.getOrigenOACI(),
-                        paquete.getDestinoOACI(),
-                        creacionUtc,
-                        config.getMaxRutasPorPaquete(),
-                        config.getMaxEscalas(),
-                        config.getMinimaConexion(),
-                        config.getHorizonteBusqueda()
-                );
-
-                if (config.getFinSimulacionUtcExclusivo() != null) {
-                    List<Ruta> filtradas = new ArrayList<>();
-                    for (Ruta ruta : rutas) {
-                        if (!estaFueraDeVentanaSimulacion(ruta, config)) {
-                            filtradas.add(ruta);
-                        }
-                    }
-                    rutas = filtradas;
-                }
-
-                cacheConsulta.put(keyCache, rutas);
+            if (cacheadas == null || cacheadas.isEmpty()) {
+                candidatos.put(paquete.getId(), List.of());
+                continue;
             }
-            candidatos.put(paquete.getId(), rutas);
+
+            LocalDateTime finVentana = creacionUtc.plus(config.getHorizonteBusqueda());
+            List<Ruta> filtradas = new ArrayList<>();
+            for (Ruta ruta : cacheadas) {
+                if (ruta.getSalidaUtc().isBefore(creacionUtc)) continue;
+                if (ruta.getSalidaUtc().isAfter(finVentana)) break;
+                if (config.getFinSimulacionUtcExclusivo() != null
+                        && estaFueraDeVentanaSimulacion(ruta, config)) continue;
+                filtradas.add(ruta);
+            }
+            candidatos.put(paquete.getId(), filtradas);
         }
-        
+
         return candidatos;
     }
 }

@@ -289,10 +289,9 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             if (!factible) {
                 continue;
             }
-            Map<String, Ruta> tentativa = new HashMap<>(propuestaBase);
-            tentativa.put(paquete.getId(), ruta);
-            double scoreGlobal = PlanificacionUtils.evaluarAsignacion("ALNS", tentativa, datos, config).getCostoTotal();
-            resultado.add(new RutaScore(ruta, scoreGlobal));
+            // Score local: NO itera todo el dataset, solo evalúa este paquete+ruta
+            double scoreLocal = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, datos, config);
+            resultado.add(new RutaScore(ruta, scoreLocal));
         }
 
         resultado.sort(Comparator.comparingDouble(r -> r.score));
