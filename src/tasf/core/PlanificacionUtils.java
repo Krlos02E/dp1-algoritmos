@@ -4,9 +4,11 @@ import tasf.config.Config_Simulacion;
 import tasf.model.Aeropuerto;
 import tasf.model.Paquete;
 import tasf.model.Ruta;
+import tasf.model.Vuelo;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -154,7 +156,7 @@ public final class PlanificacionUtils {
             Config_Simulacion config
     ) {
         if (ruta == null) {
-            return 10000.0; // costo de no asignar
+            return 10000.0;
         }
         if (estaFueraDeVentanaSimulacion(ruta, config)) {
             return 10000.0;
@@ -162,9 +164,61 @@ public final class PlanificacionUtils {
         LocalDateTime creacion = getCreacionUtc(paquete, datos, config);
         double horas = ruta.getHorasTotalesDesde(creacion);
         double costoFueraPlazo = estaFueraDePlazo(paquete, ruta, datos, config) ? 2500.0 : 0.0;
-        // Penalizar escalas adicionales: cada escala extra añade riesgo de retraso
         double costoEscalas = ruta.getCantidadSaltos() * 500.0;
         return costoFueraPlazo + costoEscalas + horas;
+    }
+
+    /**
+     * Score con penalización de congestión: considera capacidad de aeropuertos y vuelos.
+     * Penalización lineal × ratio para efecto desde el inicio.
+     */
+    public static double evaluarRutaIndividual(
+            Paquete paquete,
+            Ruta ruta,
+            EstadoOperacional estado,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        double costo = evaluarRutaIndividual(paquete, ruta, datos, config);
+        if (ruta == null || estado == null) return costo;
+
+        Aeropuerto aeropuertoActual = datos.getAeropuerto(paquete.getOrigenOACI());
+        if (aeropuertoActual == null) {
+            aeropuertoActual = datos.getAeropuerto(config.getAeropuertoHub());
+        }
+        if (aeropuertoActual == null) return costo;
+
+        LocalDateTime instante = getCreacionUtc(paquete, datos, config);
+        int cantidad = paquete.getCantidad();
+        List<Vuelo> vuelos = ruta.getVuelos();
+
+        for (int i = 0; i < vuelos.size(); i++) {
+            Vuelo vuelo = vuelos.get(i);
+            // Penalización por espera en aeropuerto
+            LocalDateTime inicioEspera = (i == 0) ? instante : instante;
+            if (inicioEspera.isBefore(vuelo.getSalidaUtc())) {
+                LocalDateTime hora = inicioEspera.truncatedTo(ChronoUnit.HOURS);
+                LocalDateTime fin = vuelo.getSalidaUtc();
+                while (hora.isBefore(fin)) {
+                    int ocupacion = estado.getOcupacionHora(aeropuertoActual.getCodigoOACI(), hora);
+                    double ratio = (double) ocupacion / Math.max(1, aeropuertoActual.getCapacidadMaxima());
+                    // Lineal × peso × cantidad
+                    costo += ratio * 2000.0 * cantidad;
+                    hora = hora.plusHours(1);
+                }
+            }
+
+            // Penalización por carga del vuelo (lineal con factor alto)
+            int cargaActual = estado.getCargaVuelo(vuelo.getId());
+            double ratioVuelo = (double) cargaActual / Math.max(1, vuelo.getCapacidadCarga());
+            costo += ratioVuelo * 3000.0 * cantidad;
+
+            // Avanzar al siguiente punto
+            aeropuertoActual = vuelo.getDestino();
+            instante = vuelo.getLlegadaUtc();
+        }
+
+        return costo;
     }
 
     public static Map<String, List<Ruta>> construirCandidatosRutas(

@@ -289,9 +289,9 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             if (!factible) {
                 continue;
             }
-            // Score local: NO itera todo el dataset, solo evalúa este paquete+ruta
-            double scoreLocal = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, datos, config);
-            resultado.add(new RutaScore(ruta, scoreLocal));
+            // Score con penalización de congestión usando el estado actual
+            double scoreCongestion = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, estado, datos, config);
+            resultado.add(new RutaScore(ruta, scoreCongestion));
         }
 
         resultado.sort(Comparator.comparingDouble(r -> r.score));

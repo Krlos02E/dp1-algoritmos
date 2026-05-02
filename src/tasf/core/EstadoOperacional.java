@@ -95,6 +95,10 @@ public class EstadoOperacional {
                 .getOrDefault(horaUtc.truncatedTo(ChronoUnit.HOURS), 0);
     }
 
+    public int getCargaVuelo(String vueloId) {
+        return cargaPorVuelo.getOrDefault(vueloId, 0);
+    }
+
     public boolean reservarRutaSiFactible(
             Paquete paquete,
             Ruta ruta,

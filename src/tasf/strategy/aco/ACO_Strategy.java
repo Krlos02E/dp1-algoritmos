@@ -253,8 +253,8 @@ public class ACO_Strategy implements PlanificadorStrategy {
                     continue;
                 }
 
-                // Score local: NO itera todo el dataset
-                double costoLocal = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, datos, config);
+                // Score con penalización de congestión
+                double costoLocal = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, estado, datos, config);
                 double desirability = calcularDeseabilidad(paquete, ruta, datos, config, feromonas, costoLocal);
                 factibles.add(new RutaProb(ruta, desirability));
                 total += desirability;
@@ -470,8 +470,8 @@ public class ACO_Strategy implements PlanificadorStrategy {
                 continue;
             }
 
-            // Score local: NO itera todo el dataset
-            double costoLocal = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, datos, config);
+            // Score con penalización de congestión
+            double costoLocal = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, estado, datos, config);
             double desirability = calcularDeseabilidad(paquete, ruta, datos, config, feromonas, costoLocal);
             if (desirability > mejorDesirability) {
                 mejorDesirability = desirability;
