@@ -433,21 +433,21 @@ public final class StandardExperimentPipeline {
         boolean muchosVuelos = diasVuelos >= 100;
         if (muchosPaquetes && muchosVuelos) {
             config.setMaxRutasPorPaquete(25);
-            config.setHorizonteBusqueda(Duration.ofHours(336)); // 14 dias
+            config.setHorizonteBusqueda(Duration.ofHours(720)); // 30 dias
             config.setIteracionesALNS(50);
             config.setIteracionesACO(25);
             config.setVentanaActualizacionPesos(5);
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTIVO] paquetes=%d vuelos=%d → iteraciones=ALNS(50)/ACO(25), maxRutas=25, horizonte=14d",
+                    "  [ADAPTIVO] paquetes=%d vuelos=%d → iteraciones=ALNS(50)/ACO(25), maxRutas=25, horizonte=30d",
                     totalPaquetes, diasVuelos * 2866));
         } else if (muchosPaquetes) {
             config.setMaxRutasPorPaquete(25);
-            config.setHorizonteBusqueda(Duration.ofHours(336));
+            config.setHorizonteBusqueda(Duration.ofHours(720)); // 30 dias
             config.setIteracionesALNS(50);
             config.setIteracionesACO(25);
             config.setVentanaActualizacionPesos(5);
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTIVO] paquetes=%d → iteraciones=ALNS(50)/ACO(25), maxRutas=25, horizonte=14d",
+                    "  [ADAPTIVO] paquetes=%d → iteraciones=ALNS(50)/ACO(25), maxRutas=25, horizonte=30d",
                     totalPaquetes));
         }
         return config;
