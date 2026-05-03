@@ -233,7 +233,14 @@ public class ACO_Strategy implements PlanificadorStrategy {
         Map<String, Ruta> propuesta = new HashMap<>();
         EstadoOperacional estado = new EstadoOperacional();
         List<Paquete> paquetes = new ArrayList<>(datos.getPaquetes());
-        paquetes.sort(Comparator.comparing(p -> PlanificacionUtils.getCreacionUtc(p, datos, config)));
+        // Ordenar por numero de rutas candidatas (asc), luego por creacion
+        paquetes.sort((a, b) -> {
+            int na = candidatos.getOrDefault(a.getId(), List.of()).size();
+            int nb = candidatos.getOrDefault(b.getId(), List.of()).size();
+            if (na != nb) return Integer.compare(na, nb);
+            return PlanificacionUtils.getCreacionUtc(a, datos, config)
+                    .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
+        });
 
         for (Paquete paquete : paquetes) {
             List<Ruta> rutasPaquete = candidatos.getOrDefault(paquete.getId(), List.of());

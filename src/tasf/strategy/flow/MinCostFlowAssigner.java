@@ -61,13 +61,8 @@ public class MinCostFlowAssigner {
                 asignaciones.put(paquete.getId(), rutaSeleccionada);
                 exitos++;
             }
-
-            if (intentos <= 10 || intentos % 1000 == 0) {
-                System.err.println("[MCF DEBUG] paquete " + paquete.getId() + " intentos=" + intentos + " aceptados=" + asignaciones.size());
-            }
         }
         
-        System.err.println("[MCF DEBUG] resultado final: intentos=" + intentos + " éxitos=" + exitos + " asignaciones=" + asignaciones.size());
         return asignaciones;
     }
 

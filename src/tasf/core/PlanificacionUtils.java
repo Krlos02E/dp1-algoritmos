@@ -26,10 +26,10 @@ public final class PlanificacionUtils {
     private PlanificacionUtils() {
     }
 
-    private static volatile Map<String, List<Ruta>> CACHE_GLOBAL_RUTAS = new HashMap<>();
+    private static volatile Map<String, List<Ruta>> CACHE_GLOBAL_RUTAS = new ConcurrentHashMap<>();
 
     public static void limpiarCacheGlobal() {
-        CACHE_GLOBAL_RUTAS = new HashMap<>();
+        CACHE_GLOBAL_RUTAS = new ConcurrentHashMap<>();
     }
 
     public static LocalDateTime getCreacionUtc(Paquete paquete, Dataset datos, Config_Simulacion config) {
@@ -98,18 +98,28 @@ public final class PlanificacionUtils {
     ) {
         Solucion solucion = new Solucion(estrategia);
         EstadoOperacional estado = new EstadoOperacional();
-        List<Paquete> ordenados = new ArrayList<>(datos.getPaquetes());
-        ordenados.sort(Comparator.comparing(p -> getCreacionUtc(p, datos, config)));
+        List<Paquete> paquetes = new ArrayList<>();
+        for (Paquete p : datos.getPaquetes()) {
+            if (propuesta.containsKey(p.getId())) {
+                paquetes.add(p);
+            }
+        }
+        // Priorizar paquetes con rutas mas restringidas (menos vuelos), luego por creacion
+        paquetes.sort((a, b) -> {
+            Ruta ra = propuesta.get(a.getId());
+            Ruta rb = propuesta.get(b.getId());
+            int na = ra != null ? ra.getVuelos().size() : Integer.MAX_VALUE;
+            int nb = rb != null ? rb.getVuelos().size() : Integer.MAX_VALUE;
+            if (na != nb) return Integer.compare(na, nb);
+            return getCreacionUtc(a, datos, config).compareTo(getCreacionUtc(b, datos, config));
+        });
 
         double horasAcumuladas = 0.0;
         int entregados = 0;
 
-        for (Paquete paquete : ordenados) {
+        for (Paquete paquete : paquetes) {
             Ruta ruta = propuesta.get(paquete.getId());
-            if (ruta == null) {
-                solucion.marcarNoAsignado(paquete.getId(), false);
-                continue;
-            }
+            if (ruta == null) continue;
 
             if (estaFueraDeVentanaSimulacion(ruta, config)) {
                 solucion.marcarNoAsignado(paquete.getId(), false);
@@ -129,6 +139,13 @@ public final class PlanificacionUtils {
             entregados++;
         }
 
+        // Marcar como no asignados los paquetes que nunca tuvieron ruta en la propuesta
+        for (Paquete p : datos.getPaquetes()) {
+            if (!propuesta.containsKey(p.getId()) && !solucion.getPaquetesNoAsignados().contains(p.getId())) {
+                solucion.marcarNoAsignado(p.getId(), false);
+            }
+        }
+
         double horasPromedio = entregados == 0 ? 0.0 : horasAcumuladas / entregados;
         solucion.setHorasPromedioEntrega(horasPromedio);
 
@@ -140,14 +157,13 @@ public final class PlanificacionUtils {
                         + horasAcumuladas;
         solucion.setCostoTotal(costo);
         solucion.setMetrica("paquetesNoAsignados", noAsignados);
+        solucion.setMetrica("eventosColapso", solucion.getEventosColapso());
         return solucion;
     }
 
     /**
      * Score local y rápido para un solo paquete+ruta. NO itera todo el dataset.
-     * Úsese dentro de bucles metaheurísticos donde evaluarAsignacion() es prohibitivo.
-     *
-     * Penaliza: fuera de plazo (2500), colapso potencial (500), horas totales, escalas extras.
+     * Penaliza: tardanza proporcional a minutos de retraso, escalas, horas de ruta.
      */
     public static double evaluarRutaIndividual(
             Paquete paquete,
@@ -162,10 +178,13 @@ public final class PlanificacionUtils {
             return 10000.0;
         }
         LocalDateTime creacion = getCreacionUtc(paquete, datos, config);
-        double horas = ruta.getHorasTotalesDesde(creacion);
-        double costoFueraPlazo = estaFueraDePlazo(paquete, ruta, datos, config) ? 2500.0 : 0.0;
+        LocalDateTime limite = creacion.plus(getPlazoObjetivo(paquete, datos, config));
+        double tardanzaMin = Math.max(0, Duration.between(limite, ruta.getLlegadaUtc()).toMinutes());
+        // Penalización fuerte por tardanza: cada minuto tarde = 50 puntos
+        double costoTardanza = tardanzaMin * 50.0;
         double costoEscalas = ruta.getCantidadSaltos() * 500.0;
-        return costoFueraPlazo + costoEscalas + horas;
+        double horasRuta = ruta.getHorasTotalesDesde(creacion);
+        return costoTardanza + costoEscalas + horasRuta;
     }
 
     /**
@@ -202,16 +221,17 @@ public final class PlanificacionUtils {
                 while (hora.isBefore(fin)) {
                     int ocupacion = estado.getOcupacionHora(aeropuertoActual.getCodigoOACI(), hora);
                     double ratio = (double) ocupacion / Math.max(1, aeropuertoActual.getCapacidadMaxima());
-                    // Lineal × peso × cantidad
-                    costo += ratio * 2000.0 * cantidad;
+                    // Exponencial: penaliza fuerte cuando aeropuerto esta cerca de colapso
+                    costo += Math.pow(ratio, 2) * 5000.0 * cantidad;
                     hora = hora.plusHours(1);
                 }
             }
 
-            // Penalización por carga del vuelo (lineal con factor alto)
+            // Penalizacion por carga del vuelo (exponencial: ratio^3)
             int cargaActual = estado.getCargaVuelo(vuelo.getId());
             double ratioVuelo = (double) cargaActual / Math.max(1, vuelo.getCapacidadCarga());
-            costo += ratioVuelo * 3000.0 * cantidad;
+            // Exponencial: cuando ratio > 0.5 la penalizacion crece dramaticamente
+            costo += Math.pow(ratioVuelo, 3) * 10000.0 * cantidad;
 
             // Avanzar al siguiente punto
             aeropuertoActual = vuelo.getDestino();
@@ -240,11 +260,14 @@ public final class PlanificacionUtils {
         }
 
         // Paso 2: Buscar rutas pendientes en paralelo
+        // Buscar MUCHAS rutas por par OD para tener diversidad temporal
         if (!paresPendientes.isEmpty()) {
             int hilos = Math.min(Runtime.getRuntime().availableProcessors(), paresPendientes.size());
             ExecutorService pool = Executors.newFixedThreadPool(hilos);
             final int total = paresPendientes.size();
             final long t0 = System.nanoTime();
+
+            int rutasPorPar = config.getMaxRutasPorPaquete() * 4; // buscar mas, filtrar luego por paquete
 
             List<String> paresLista = new ArrayList<>(paresPendientes);
             for (int i = 0; i < paresLista.size(); i++) {
@@ -252,11 +275,12 @@ public final class PlanificacionUtils {
                 final String par = paresLista.get(i);
                 pool.submit(() -> {
                     String[] partes = par.split("\\|");
+                    // Buscar desde la primera creacion del par
                     LocalDateTime creacionUtc = primerCreacionPorPar.getOrDefault(par,
                             LocalDateTime.of(2026, 1, 1, 0, 0));
                     List<Ruta> rutas = finder.buscarRutas(
                             partes[0], partes[1], creacionUtc,
-                            config.getMaxRutasPorPaquete(),
+                            rutasPorPar,
                             config.getMaxEscalas(),
                             config.getMinimaConexion(),
                             config.getHorizonteBusqueda()
@@ -284,7 +308,8 @@ public final class PlanificacionUtils {
             catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         }
 
-        // Paso 3: Filtrar rutas cacheadas por tiempo de cada paquete
+        // Paso 3: Para CADA paquete, filtrar rutas cacheadas por su tiempo de creacion
+        // y seleccionar hasta maxRutasPorPaquete
         for (Paquete paquete : datos.getPaquetes()) {
             LocalDateTime creacionUtc = getCreacionUtc(paquete, datos, config);
             String key = paquete.getOrigenOACI() + "|" + paquete.getDestinoOACI();
@@ -303,8 +328,15 @@ public final class PlanificacionUtils {
                 if (config.getFinSimulacionUtcExclusivo() != null
                         && estaFueraDeVentanaSimulacion(ruta, config)) continue;
                 filtradas.add(ruta);
+                if (filtradas.size() >= config.getMaxRutasPorPaquete()) break;
             }
-            candidatos.put(paquete.getId(), filtradas);
+
+            // Si el filtrado dejo 0 rutas, usar cacheadas sin filtrar (fase 2 verificara)
+            if (filtradas.isEmpty()) {
+                candidatos.put(paquete.getId(), cacheadas);
+            } else {
+                candidatos.put(paquete.getId(), filtradas);
+            }
         }
 
         return candidatos;

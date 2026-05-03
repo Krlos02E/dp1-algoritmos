@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 public class RouteFinder {
-    private static final long TIMEOUT_NS = 30_000_000L;
+    private static final long TIMEOUT_NS = 100_000_000L; // 100ms por par OD
 
     private final Dataset datos;
 
@@ -41,7 +41,7 @@ public class RouteFinder {
         explorar(
                 origen, destino, disponibleDesdeUtc, disponibleDesdeUtc,
                 maxEscalas, minimaConexion, horizonteBusqueda,
-                visitados, actual, rutas, maxRutas * 4,
+                visitados, actual, rutas, maxRutas * 8,
                 candidatosIniciales, deadline
         );
 
