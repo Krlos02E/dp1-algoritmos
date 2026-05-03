@@ -66,6 +66,12 @@ public class ALNS_Strategy implements PlanificadorStrategy {
 
         Map<String, Ruta> propuestaActual = construirInicialGreedy(datos, config, candidatos);
         Solucion solucionActual = PlanificacionUtils.evaluarAsignacion("ALNS", propuestaActual, datos, config);
+
+        // Diagnostico post-greedy
+        int asignadosGreedy = propuestaActual.size();
+        System.out.printf("[ALNS] greedy: asignados=%d/%d (%.1f%%)%n",
+                asignadosGreedy, totalPaquetes, 100.0 * asignadosGreedy / totalPaquetes);
+
         Map<String, Ruta> propuestaMejor = new HashMap<>(propuestaActual);
         Solucion mejorSolucion = solucionActual;
 
@@ -120,6 +126,9 @@ public class ALNS_Strategy implements PlanificadorStrategy {
 
             temperatura = Math.max(1e-6, temperatura * 0.995);
         }
+
+        System.out.printf("[ALNS] post-loop: mejor=%d asignados, costo=%.0f%n",
+                propuestaMejor.size(), mejorSolucion.getCostoTotal());
 
         // Fase de recuperación: intentar asignar TODOS los paquetes sin ruta
         propuestaMejor = repararSinRutas(propuestaMejor, datos, config, candidatos);
@@ -328,119 +337,49 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             Map<String, List<Ruta>> candidatos
     ) {
         Map<String, Ruta> propuesta = new HashMap<>(propuestaBase);
+        EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
+        List<Paquete> paquetes = new ArrayList<>(datos.getPaquetes());
 
-        // Multi-pass: cada pass intenta asignar sin-ruta y hacer swaps
-        for (int pass = 0; pass < 3; pass++) {
-            EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
-            List<Paquete> paquetes = new ArrayList<>(datos.getPaquetes());
+        List<Paquete> sinRuta = new ArrayList<>();
+        for (Paquete paquete : paquetes) {
+            if (propuesta.containsKey(paquete.getId())) continue;
+            sinRuta.add(paquete);
+        }
+        sinRuta.sort((a, b) -> {
+            int na = candidatos.getOrDefault(a.getId(), List.of()).size();
+            int nb = candidatos.getOrDefault(b.getId(), List.of()).size();
+            if (na != nb) return Integer.compare(na, nb);
+            return PlanificacionUtils.getCreacionUtc(a, datos, config)
+                    .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
+        });
 
-            List<Paquete> sinRuta = new ArrayList<>();
-            for (Paquete paquete : paquetes) {
-                if (propuesta.containsKey(paquete.getId())) continue;
-                sinRuta.add(paquete);
+        int totalSinRuta = sinRuta.size();
+        int conCandidatos = 0;
+        int asignadosExtra = 0;
+
+        for (Paquete paquete : sinRuta) {
+            LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(paquete, datos, config);
+            List<Ruta> rutas = candidatos.getOrDefault(paquete.getId(), List.of());
+            if (rutas.isEmpty()) continue;
+            conCandidatos++;
+
+            Ruta mejor = null;
+            double mejorScore = Double.POSITIVE_INFINITY;
+            for (Ruta ruta : rutas) {
+                EstadoOperacional prueba = estado.copia();
+                if (!prueba.reservarRutaSiFactible(paquete, ruta, creacion, datos, config)) continue;
+                double score = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, estado, datos, config);
+                if (score < mejorScore) { mejorScore = score; mejor = ruta; }
             }
-            sinRuta.sort((a, b) -> {
-                int na = candidatos.getOrDefault(a.getId(), List.of()).size();
-                int nb = candidatos.getOrDefault(b.getId(), List.of()).size();
-                if (na != nb) return Integer.compare(na, nb);
-                return PlanificacionUtils.getCreacionUtc(a, datos, config)
-                        .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
-            });
-
-            int asignadosEnPass = 0;
-            for (Paquete paquete : sinRuta) {
-                if (propuesta.containsKey(paquete.getId())) continue;
-                LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(paquete, datos, config);
-                List<Ruta> rutas = candidatos.getOrDefault(paquete.getId(), List.of());
-                if (rutas.isEmpty()) continue;
-
-                // Intento directo
-                Ruta mejor = null;
-                double mejorScore = Double.POSITIVE_INFINITY;
-                for (Ruta ruta : rutas) {
-                    EstadoOperacional prueba = estado.copia();
-                    if (!prueba.reservarRutaSiFactible(paquete, ruta, creacion, datos, config)) continue;
-                    double score = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, estado, datos, config);
-                    if (score < mejorScore) { mejorScore = score; mejor = ruta; }
-                }
-                if (mejor != null) {
-                    estado.reservarRutaSiFactible(paquete, mejor, creacion, datos, config);
-                    propuesta.put(paquete.getId(), mejor);
-                    asignadosEnPass++;
-                    continue;
-                }
-
-                // Intento con swap: buscar un paquete asignado que use un vuelo conflictivo
-                // y reasignarlo a otra ruta que libere capacidad
-                boolean swapExitoso = false;
-                for (Ruta rutaIntento : rutas) {
-                    // Identificar vuelos de esta ruta que estan al limite
-                    List<Vuelo> vuelosConflictivos = new ArrayList<>();
-                    for (Vuelo v : rutaIntento.getVuelos()) {
-                        if (estado.getCargaVuelo(v.getId()) >= v.getCapacidadCarga()) {
-                            vuelosConflictivos.add(v);
-                        }
-                    }
-                    if (vuelosConflictivos.isEmpty()) continue;
-
-                    // Para cada vuelo conflictivo, buscar un paquete asignado que lo use
-                    for (Vuelo vConflict : vuelosConflictivos) {
-                        if (swapExitoso) break;
-                        for (Map.Entry<String, Ruta> entry : propuesta.entrySet()) {
-                            String otroId = entry.getKey();
-                            Ruta otroRuta = entry.getValue();
-                            boolean usaConflictivo = false;
-                            for (Vuelo v : otroRuta.getVuelos()) {
-                                if (v.getId().equals(vConflict.getId())) { usaConflictivo = true; break; }
-                            }
-                            if (!usaConflictivo) continue;
-
-                            // Intentar reasignar 'otro' a una ruta que no use el vuelo conflictivo
-                            Paquete otroPaquete = datos.getPaquetePorId(otroId);
-                            if (otroPaquete == null) continue;
-                            LocalDateTime creacionOtro = PlanificacionUtils.getCreacionUtc(otroPaquete, datos, config);
-                            List<Ruta> otrasRutas = candidatos.getOrDefault(otroId, List.of());
-
-                            for (Ruta altRuta : otrasRutas) {
-                                // Verificar que altRuta no use el vuelo conflictivo
-                                boolean altUsaConflictivo = false;
-                                for (Vuelo v : altRuta.getVuelos()) {
-                                    if (v.getId().equals(vConflict.getId())) { altUsaConflictivo = true; break; }
-                                }
-                                if (altUsaConflictivo) continue;
-
-                                // Construir estado sin 'otro' y verificar si cabe 'otro' con altRuta y 'paquete' con rutaIntento
-                                EstadoOperacional estadoPrueba = new EstadoOperacional();
-                                boolean factible = true;
-                                for (Map.Entry<String, Ruta> e2 : propuesta.entrySet()) {
-                                    if (e2.getKey().equals(otroId)) continue;
-                                    Paquete p2 = datos.getPaquetePorId(e2.getKey());
-                                    if (p2 == null) { factible = false; break; }
-                                    LocalDateTime c2 = PlanificacionUtils.getCreacionUtc(p2, datos, config);
-                                    if (!estadoPrueba.reservarRutaSiFactible(p2, e2.getValue(), c2, datos, config)) {
-                                        factible = false; break;
-                                    }
-                                }
-                                if (!factible) continue;
-                                if (!estadoPrueba.reservarRutaSiFactible(otroPaquete, altRuta, creacionOtro, datos, config)) continue;
-                                if (!estadoPrueba.reservarRutaSiFactible(paquete, rutaIntento, creacion, datos, config)) continue;
-
-                                // Swap exitoso
-                                propuesta.put(otroId, altRuta);
-                                propuesta.put(paquete.getId(), rutaIntento);
-                                estado = estadoPrueba;
-                                asignadosEnPass++;
-                                swapExitoso = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (swapExitoso) break;
-                }
+            if (mejor != null) {
+                estado.reservarRutaSiFactible(paquete, mejor, creacion, datos, config);
+                propuesta.put(paquete.getId(), mejor);
+                asignadosExtra++;
             }
-            if (asignadosEnPass == 0) break;
         }
 
+        System.out.println(String.format(Locale.ROOT, "  [ALNS] reparacionSinRutas: totalSinRuta=%d, conCandidatos=%d, asignadosExtra=%d",
+                totalSinRuta, conCandidatos, asignadosExtra));
         return propuesta;
     }
 
