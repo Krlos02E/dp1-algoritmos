@@ -35,7 +35,6 @@ public class RouteFinder {
         Set<String> visitados = new HashSet<>();
         visitados.add(origen);
 
-        // Buscar desde múltiples puntos de inicio temporal para diversidad
         List<LocalDateTime> inicios = new ArrayList<>();
         inicios.add(disponibleDesdeUtc);
         for (int i = 1; i <= 5; i++) {
@@ -43,7 +42,7 @@ public class RouteFinder {
         }
 
         long deadline = System.nanoTime() + TIMEOUT_NS;
-        int limiteInterno = maxRutas * 4;
+        int limiteInterno = maxRutas * 6;
 
         for (LocalDateTime inicio : inicios) {
             if (System.nanoTime() >= deadline) break;
@@ -62,14 +61,31 @@ public class RouteFinder {
             );
         }
 
-        // Ordenar: primero rutas directas (0 escalas), luego por espera mínima, luego por llegadas
         rutas.sort(Comparator.comparingInt((Ruta r) -> r.getCantidadSaltos() - 1)
                 .thenComparingDouble((Ruta r) -> calcularEsperaTotal(r, disponibleDesdeUtc))
                 .thenComparing(Ruta::getLlegadaUtc));
-        if (rutas.size() > maxRutas) {
-            return new ArrayList<>(rutas.subList(0, maxRutas));
+        
+        List<Ruta> filtradas = new ArrayList<>();
+        Set<String> firmasUsadas = new HashSet<>();
+        
+        for (Ruta r : rutas) {
+            if (filtradas.size() >= maxRutas) break;
+            
+            List<Vuelo> vuelos = r.getVuelos();
+            StringBuilder firma = new StringBuilder();
+            for (Vuelo v : vuelos) {
+                firma.append(v.getOrigen().getCodigoOACI()).append("-");
+            }
+            firma.append(r.getLlegadaUtc());
+            
+            String key = firma.toString();
+            if (!firmasUsadas.contains(key) || filtradas.size() < maxRutas / 3) {
+                filtradas.add(r);
+                firmasUsadas.add(key);
+            }
         }
-        return rutas;
+        
+        return filtradas;
     }
 
     private double calcularEsperaTotal(Ruta ruta, LocalDateTime creacion) {

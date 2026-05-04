@@ -8,6 +8,8 @@ import tasf.core.DistribucionEnviosPorDia;
 import tasf.core.PlanificacionUtils;
 import tasf.core.Solucion;
 import tasf.io.DatasetTextoLoader;
+import tasf.io.DatasetTextoLoader.RutasDataset;
+import tasf.model.Aeropuerto;
 import tasf.model.Paquete;
 import tasf.model.Ruta;
 import tasf.strategy.PlanificadorRutasStrategy;
@@ -28,6 +30,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Map;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -131,9 +134,14 @@ public final class StandardExperimentPipeline {
         long tPipeline = System.nanoTime();
         PlanificacionUtils.limpiarCacheGlobal();
 
-        // Paso 1: Escaneo liviano para determinar fechas objetivo ANTES de cargar datos
+        // Cargar aeropuertos para conversión a UTC en escaneo liviano
+        Path carpetaDatos = dataDir.toAbsolutePath().normalize();
+        RutasDataset rutas = DatasetTextoLoader.resolverRutas(carpetaDatos);
+        Map<String, Aeropuerto> aeropuertos = DatasetTextoLoader.cargarAeropuertos(rutas.archivoAeropuertos());
+
+        // Paso 1: Escaneo liviano para determinar fechas objetivo ANTES de cargar datos (usando UTC)
         Map<LocalDate, Integer> conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
-                resolverCarpetaEnvios(dataDir)
+                resolverCarpetaEnvios(dataDir), aeropuertos
         );
         long msScan = (System.nanoTime() - tPipeline) / 1_000_000;
         System.out.println(String.format(Locale.ROOT,

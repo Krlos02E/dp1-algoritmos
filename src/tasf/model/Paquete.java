@@ -52,7 +52,8 @@ public class Paquete {
     }
 
     public LocalDateTime getInstanteCreacionUtc(Aeropuerto aeropuertoOrigen) {
-        return aeropuertoOrigen.convertirLocalAUTC(fecha, hora);
+        // fecha y hora ya están en UTC tras la carga en DatasetTextoLoader
+        return LocalDateTime.of(fecha, hora);
     }
 
     public static Paquete parse(String raw) {

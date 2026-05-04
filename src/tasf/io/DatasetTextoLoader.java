@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -58,7 +60,7 @@ public final class DatasetTextoLoader {
         return new Dataset(aeropuertos, vuelos, paquetes);
     }
 
-    public static Map<LocalDate, Integer> escanearConteoPorDia(Path carpetaEnvios) throws IOException {
+    public static Map<LocalDate, Integer> escanearConteoPorDia(Path carpetaEnvios, Map<String, Aeropuerto> aeropuertos) throws IOException {
         Map<LocalDate, Integer> conteo = new HashMap<>();
         DateTimeFormatter fmt = DateTimeFormatter.BASIC_ISO_DATE;
 
@@ -67,6 +69,12 @@ public final class DatasetTextoLoader {
                     .filter(Files::isRegularFile)
                     .filter(p -> PATRON_ARCHIVO_ENVIOS.matcher(p.getFileName().toString()).matches())
                     .forEach(archivo -> {
+                        Matcher matcherArchivo = PATRON_ARCHIVO_ENVIOS.matcher(archivo.getFileName().toString());
+                        if (!matcherArchivo.matches()) return;
+                        String origen = matcherArchivo.group(1);
+                        Aeropuerto aeropuertoOrigen = aeropuertos.get(origen);
+                        if (aeropuertoOrigen == null) return;
+
                         try (Stream<String> lineas = Files.lines(archivo, StandardCharsets.UTF_8)) {
                             lineas.forEach(raw -> {
                                 String linea = raw.trim();
@@ -78,8 +86,23 @@ public final class DatasetTextoLoader {
                                 String fechaStr = linea.substring(dash1 + 1, dash2);
                                 if (fechaStr.length() != 8) return;
                                 try {
-                                    LocalDate fecha = LocalDate.parse(fechaStr, fmt);
-                                    conteo.merge(fecha, 1, Integer::sum);
+                                    LocalDate fechaLocal = LocalDate.parse(fechaStr, fmt);
+                                    // Extraer hora local (hh y mm)
+                                    String[] parts = linea.split("-");
+                                    if (parts.length >= 4) {
+                                        int hh = 0, mm = 0;
+                                        if (parts[2].contains(":")) {
+                                            String[] horaParts = parts[2].split(":");
+                                            hh = Integer.parseInt(horaParts[0]);
+                                            mm = Integer.parseInt(horaParts[1]);
+                                        } else if (parts.length >= 5) {
+                                            hh = Integer.parseInt(parts[2]);
+                                            mm = Integer.parseInt(parts[3]);
+                                        }
+                                        // Convertir a UTC
+                                        LocalDateTime utc = aeropuertoOrigen.convertirLocalAUTC(fechaLocal, LocalTime.of(hh, mm));
+                                        conteo.merge(utc.toLocalDate(), 1, Integer::sum);
+                                    }
                                 } catch (DateTimeParseException ignored) {
                                 }
                             });
@@ -108,7 +131,7 @@ public final class DatasetTextoLoader {
                 + "Compatibilidad activa con estructura legacy: planes_vuelo.txt + _envios_preliminar_/";
     }
 
-    private static RutasDataset resolverRutas(Path carpetaDatos) throws IOException {
+    public static RutasDataset resolverRutas(Path carpetaDatos) throws IOException {
         Path base = carpetaDatos.toAbsolutePath().normalize();
 
         // Estructura organizada: <base>/input/aeropuertos, <base>/input/vuelos, <base>/input/envios
@@ -158,7 +181,7 @@ public final class DatasetTextoLoader {
         }
     }
 
-    private static Map<String, Aeropuerto> cargarAeropuertos(Path archivoAeropuertos) throws IOException {
+    public static Map<String, Aeropuerto> cargarAeropuertos(Path archivoAeropuertos) throws IOException {
         Map<String, Aeropuerto> aeropuertos = new HashMap<>();
         Continente continenteActual = null;
 
@@ -237,23 +260,6 @@ public final class DatasetTextoLoader {
                 Stream<String> flujo = lineas.map(String::trim)
                         .filter(s -> !s.isEmpty());
 
-                if (filtrarPorFecha) {
-                    flujo = flujo.filter(raw -> {
-                        int dash1 = raw.indexOf('-');
-                        if (dash1 < 0) return false;
-                        int dash2 = raw.indexOf('-', dash1 + 1);
-                        if (dash2 < 0) return false;
-                        String fechaStr = raw.substring(dash1 + 1, dash2);
-                        if (fechaStr.length() != 8) return false;
-                        try {
-                            LocalDate fecha = LocalDate.parse(fechaStr, fmt);
-                            return fechasFiltro.contains(fecha);
-                        } catch (DateTimeParseException e) {
-                            return false;
-                        }
-                    });
-                }
-
                 if (maxEnviosPorArchivo > 0) {
                     flujo = flujo.limit(maxEnviosPorArchivo);
                 }
@@ -265,12 +271,21 @@ public final class DatasetTextoLoader {
                                     return;
                                 }
 
+                                // Convertir a UTC usando el aeropuerto de origen
+                                Aeropuerto aeropuertoOrigen = aeropuertos.get(origen);
+                                LocalDateTime utc = aeropuertoOrigen.convertirLocalAUTC(parsed.getFecha(), parsed.getHora());
+
+                                // Filtrar por fecha EN UTC (después de conversión)
+                                if (filtrarPorFecha && !fechasFiltro.contains(utc.toLocalDate())) {
+                                    return;
+                                }
+
                                 String idUnico = origen + "-" + parsed.getId();
                                 paquetes.add(new Paquete(
                                         idUnico,
                                         parsed.getOrigenOACI(),
-                                        parsed.getFecha(),
-                                        parsed.getHora(),
+                                        utc.toLocalDate(),  // Fecha UTC
+                                        utc.toLocalTime(),   // Hora UTC
                                         parsed.getDestinoOACI(),
                                         parsed.getCantidad(),
                                         parsed.getReferencia()
@@ -284,7 +299,7 @@ public final class DatasetTextoLoader {
         return paquetes;
     }
 
-    private record RutasDataset(
+    public record RutasDataset(
             Path archivoAeropuertos,
             Path archivoPlanesVuelo,
             Path carpetaEnvios

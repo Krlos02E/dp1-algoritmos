@@ -4,6 +4,8 @@ import tasf.config.Config_Simulacion;
 import tasf.core.Dataset;
 import tasf.core.EstadoOperacional;
 import tasf.core.PlanificacionUtils;
+import tasf.core.RouteFinder;
+import tasf.model.Aeropuerto;
 import tasf.model.Paquete;
 import tasf.model.Ruta;
 
@@ -37,12 +39,17 @@ public class MinCostFlowAssigner {
         Map<String, Ruta> asignaciones = new HashMap<>();
         EstadoOperacional estado = new EstadoOperacional();
 
-        // Ordenar paquetes por fecha de creación
+        // Ordenar paquetes: primero los con MENOS rutas candidatas (más restringidos)
+        // y luego por creación (para evitar que paquetes flexibles saturen el sistema)
+        Map<String, List<Ruta>> candidatos = construirCandidatosRutas(datos, config);
         List<Paquete> paquetesOrdenados = new ArrayList<>(datos.getPaquetes());
-        paquetesOrdenados.sort((a, b) -> 
-            PlanificacionUtils.getCreacionUtc(a, datos, config)
-                .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config))
-        );
+        paquetesOrdenados.sort((a, b) -> {
+            int na = candidatos.getOrDefault(a.getId(), List.of()).size();
+            int nb = candidatos.getOrDefault(b.getId(), List.of()).size();
+            if (na != nb) return Integer.compare(na, nb);
+            return PlanificacionUtils.getCreacionUtc(a, datos, config)
+                    .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
+        });
 
         int intentos = 0;
         int exitos = 0;
@@ -64,6 +71,39 @@ public class MinCostFlowAssigner {
         }
         
         return asignaciones;
+    }
+
+    /**
+     * Construye conjunto de rutas candidatas para priorizar asignación.
+     */
+    private Map<String, List<Ruta>> construirCandidatosRutas(
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        Map<String, List<Ruta>> candidatos = new HashMap<>();
+        RouteFinder finder = new RouteFinder(datos);
+        for (Paquete p : datos.getPaquetes()) {
+            Aeropuerto origen = datos.getAeropuerto(p.getOrigenOACI());
+            if (origen == null) origen = datos.getAeropuerto(config.getAeropuertoHub());
+            if (origen == null) continue;
+            
+            LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            List<Ruta> rutas = finder.buscarRutas(
+                    p.getOrigenOACI(), p.getDestinoOACI(), creacion,
+                    200, config.getMaxEscalas(), config.getMinimaConexion(), config.getHorizonteBusqueda()
+            );
+            // Filtrar por ventana de tiempo del paquete
+            LocalDateTime limite = creacion.plus(PlanificacionUtils.getPlazoObjetivo(p, datos, config));
+            List<Ruta> filtradas = new ArrayList<>();
+            for (Ruta r : rutas) {
+                if (r.getSalidaUtc().isBefore(creacion)) continue;
+                if (r.getLlegadaUtc().isAfter(limite)) break;
+                filtradas.add(r);
+                if (filtradas.size() >= 50) break; // Top 50 para priorización
+            }
+            candidatos.put(p.getId(), filtradas);
+        }
+        return candidatos;
     }
 
     /**

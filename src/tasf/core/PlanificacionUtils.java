@@ -223,7 +223,9 @@ public final class PlanificacionUtils {
                 while (hora.isBefore(fin)) {
                     int ocupacion = estado.getOcupacionHora(aeropuertoActual.getCodigoOACI(), hora);
                     double ratio = (double) ocupacion / Math.max(1, capAeropuerto);
-                    // Penalización CÚBICA × cantidad × horas de espera (muy agresivo)
+                    // Penalización EXPONENCIAL por congestión (5^ratio)
+                    if (ratio > 0.8) costo += Math.pow(5, ratio * 10) * cantidad;
+                    // Penalización CÚBICA × cantidad × horas de espera
                     costo += Math.pow(ratio, 3) * 500000.0 * cantidad;
                     hora = hora.plusHours(1);
                 }
@@ -324,10 +326,14 @@ public final class PlanificacionUtils {
             }
 
             LocalDateTime finVentana = creacionUtc.plus(config.getHorizonteBusqueda());
+            Duration plazo = getPlazoObjetivo(paquete, datos, config);
+            LocalDateTime limiteEntrega = creacionUtc.plus(plazo);
+            
             List<Ruta> filtradas = new ArrayList<>();
             for (Ruta ruta : cacheadas) {
                 if (ruta.getSalidaUtc().isBefore(creacionUtc)) continue;
                 if (ruta.getSalidaUtc().isAfter(finVentana)) break;
+                if (ruta.getLlegadaUtc().isAfter(limiteEntrega)) continue; // Filtro por plazo de entrega
                 if (config.getFinSimulacionUtcExclusivo() != null
                         && estaFueraDeVentanaSimulacion(ruta, config)) continue;
                 filtradas.add(ruta);
