@@ -189,7 +189,7 @@ public final class PlanificacionUtils {
 
     /**
      * Score con penalización de congestión: considera capacidad de aeropuertos y vuelos.
-     * Penalización lineal × ratio para efecto desde el inicio.
+     * Penaliza MASIVAMENTE el tiempo de espera en aeropuertos (cuello de botella principal = 87% de fallos).
      */
     public static double evaluarRutaIndividual(
             Paquete paquete,
@@ -209,29 +209,32 @@ public final class PlanificacionUtils {
 
         LocalDateTime instante = getCreacionUtc(paquete, datos, config);
         int cantidad = paquete.getCantidad();
+        int capAeropuerto = aeropuertoActual.getCapacidadMaxima();
         List<Vuelo> vuelos = ruta.getVuelos();
 
         for (int i = 0; i < vuelos.size(); i++) {
             Vuelo vuelo = vuelos.get(i);
-            // Penalización por espera en aeropuerto
-            LocalDateTime inicioEspera = (i == 0) ? instante : instante;
+            // Penalización EXTREMA por espera en aeropuerto (87% de los fallos son por esto)
+            LocalDateTime inicioEspera = instante;
             if (inicioEspera.isBefore(vuelo.getSalidaUtc())) {
                 LocalDateTime hora = inicioEspera.truncatedTo(ChronoUnit.HOURS);
                 LocalDateTime fin = vuelo.getSalidaUtc();
+                long horasEspera = Duration.between(inicioEspera, vuelo.getSalidaUtc()).toHours();
                 while (hora.isBefore(fin)) {
                     int ocupacion = estado.getOcupacionHora(aeropuertoActual.getCodigoOACI(), hora);
-                    double ratio = (double) ocupacion / Math.max(1, aeropuertoActual.getCapacidadMaxima());
-                    // Exponencial: penaliza fuerte cuando aeropuerto esta cerca de colapso
-                    costo += Math.pow(ratio, 2) * 5000.0 * cantidad;
+                    double ratio = (double) ocupacion / Math.max(1, capAeropuerto);
+                    // Penalización CÚBICA × cantidad × horas de espera (muy agresivo)
+                    costo += Math.pow(ratio, 3) * 500000.0 * cantidad;
                     hora = hora.plusHours(1);
                 }
+                // Penalización adicional LINEAL por duración de espera
+                costo += horasEspera * 10000.0 * cantidad;
             }
 
-            // Penalizacion por carga del vuelo (exponencial: ratio^3)
+            // Penalizacion por carga del vuelo (exponencial: ratio^4, muy agresivo)
             int cargaActual = estado.getCargaVuelo(vuelo.getId());
             double ratioVuelo = (double) cargaActual / Math.max(1, vuelo.getCapacidadCarga());
-            // Exponencial: cuando ratio > 0.5 la penalizacion crece dramaticamente
-            costo += Math.pow(ratioVuelo, 3) * 10000.0 * cantidad;
+            costo += Math.pow(ratioVuelo, 4) * 50000.0 * cantidad;
 
             // Avanzar al siguiente punto
             aeropuertoActual = vuelo.getDestino();
@@ -260,14 +263,15 @@ public final class PlanificacionUtils {
         }
 
         // Paso 2: Buscar rutas pendientes en paralelo
-        // Buscar MUCHAS rutas por par OD para tener diversidad temporal
+        // Buscar MUCHAS rutas por par OD para máxima diversidad temporal
         if (!paresPendientes.isEmpty()) {
             int hilos = Math.min(Runtime.getRuntime().availableProcessors(), paresPendientes.size());
             ExecutorService pool = Executors.newFixedThreadPool(hilos);
             final int total = paresPendientes.size();
             final long t0 = System.nanoTime();
 
-            int rutasPorPar = config.getMaxRutasPorPaquete() * 4; // buscar mas, filtrar luego por paquete
+            // Buscar muchas más rutas que las necesarias: filtrar después por paquete
+            int rutasPorPar = Math.max(config.getMaxRutasPorPaquete() * 10, 200);
 
             List<String> paresLista = new ArrayList<>(paresPendientes);
             for (int i = 0; i < paresLista.size(); i++) {
@@ -275,7 +279,6 @@ public final class PlanificacionUtils {
                 final String par = paresLista.get(i);
                 pool.submit(() -> {
                     String[] partes = par.split("\\|");
-                    // Buscar desde la primera creacion del par
                     LocalDateTime creacionUtc = primerCreacionPorPar.getOrDefault(par,
                             LocalDateTime.of(2026, 1, 1, 0, 0));
                     List<Ruta> rutas = finder.buscarRutas(

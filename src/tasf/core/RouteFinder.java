@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 public class RouteFinder {
-    private static final long TIMEOUT_NS = 100_000_000L; // 100ms por par OD
+    private static final long TIMEOUT_NS = 500_000_000L; // 500ms por par OD
 
     private final Dataset datos;
 
@@ -35,23 +35,52 @@ public class RouteFinder {
         Set<String> visitados = new HashSet<>();
         visitados.add(origen);
 
-        List<Vuelo> candidatosIniciales = datos.getVuelosDesde(origen, disponibleDesdeUtc, horizonteBusqueda);
+        // Buscar desde múltiples puntos de inicio temporal para diversidad
+        List<LocalDateTime> inicios = new ArrayList<>();
+        inicios.add(disponibleDesdeUtc);
+        for (int i = 1; i <= 5; i++) {
+            inicios.add(disponibleDesdeUtc.plusHours(i * 24));
+        }
+
         long deadline = System.nanoTime() + TIMEOUT_NS;
+        int limiteInterno = maxRutas * 4;
 
-        explorar(
-                origen, destino, disponibleDesdeUtc, disponibleDesdeUtc,
-                maxEscalas, minimaConexion, horizonteBusqueda,
-                visitados, actual, rutas, maxRutas * 8,
-                candidatosIniciales, deadline
-        );
+        for (LocalDateTime inicio : inicios) {
+            if (System.nanoTime() >= deadline) break;
+            if (rutas.size() >= limiteInterno) break;
 
-        rutas.sort(
-            Comparator.comparing(Ruta::getLlegadaUtc).thenComparingInt(Ruta::getCantidadSaltos)
-        );
+            visitados.clear();
+            visitados.add(origen);
+            actual.clear();
+
+            List<Vuelo> candidatosIniciales = datos.getVuelosDesde(origen, inicio, horizonteBusqueda);
+            explorar(
+                    origen, destino, inicio, inicio,
+                    maxEscalas, minimaConexion, horizonteBusqueda,
+                    visitados, actual, rutas, limiteInterno,
+                    candidatosIniciales, deadline
+            );
+        }
+
+        // Ordenar: primero rutas directas (0 escalas), luego por espera mínima, luego por llegadas
+        rutas.sort(Comparator.comparingInt((Ruta r) -> r.getCantidadSaltos() - 1)
+                .thenComparingDouble((Ruta r) -> calcularEsperaTotal(r, disponibleDesdeUtc))
+                .thenComparing(Ruta::getLlegadaUtc));
         if (rutas.size() > maxRutas) {
             return new ArrayList<>(rutas.subList(0, maxRutas));
         }
         return rutas;
+    }
+
+    private double calcularEsperaTotal(Ruta ruta, LocalDateTime creacion) {
+        double totalMinutosEspera = 0;
+        LocalDateTime instante = creacion;
+        for (Vuelo v : ruta.getVuelos()) {
+            long espera = Duration.between(instante, v.getSalidaUtc()).toMinutes();
+            totalMinutosEspera += Math.max(0, espera);
+            instante = v.getLlegadaUtc();
+        }
+        return totalMinutosEspera;
     }
 
     private void explorar(

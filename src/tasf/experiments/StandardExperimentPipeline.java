@@ -340,6 +340,9 @@ public final class StandardExperimentPipeline {
                         System.out.println(String.format(Locale.ROOT,
                                 "[BARRIDO] porcentaje=%d paquetes=%d cumple_plazo=%s",
                                 nivelEnvios, totalEnvios, cumplePlazo));
+                        if (totalEnvios <= 100 && (noAsignados > 0 || maletasFueraDePlazo > 0)) {
+                            diagnosticarPaquetes(datasetDia, solucion, config);
+                        }
                     }
                 }
             }
@@ -379,6 +382,61 @@ public final class StandardExperimentPipeline {
         PlanificadorRutasStrategy planificador = algoritmo.strategyFactory.get();
         TwoPhaseOrchestrator orchestrator = new TwoPhaseOrchestrator(planificador, new MinCostFlowAsignador());
         return orchestrator.ejecutarFlujoCompleto(datasetDia, config);
+    }
+
+    private void diagnosticarPaquetes(Dataset datasetDia, Solucion solucion, Config_Simulacion config) {
+        Map<String, Ruta> asignadas = solucion.getRutasAsignadas();
+        List<Paquete> sinAsignar = new ArrayList<>();
+        List<Paquete> fueraPlazo = new ArrayList<>();
+
+        for (Paquete p : datasetDia.getPaquetes()) {
+            Ruta ruta = asignadas.get(p.getId());
+            if (ruta == null) {
+                sinAsignar.add(p);
+            } else if (PlanificacionUtils.estaFueraDePlazo(p, ruta, datasetDia, config)) {
+                fueraPlazo.add(p);
+            }
+        }
+
+        if (!sinAsignar.isEmpty()) {
+            System.out.println("  [DIAG] NO ASIGNADOS (" + sinAsignar.size() + "):");
+            for (Paquete p : sinAsignar) {
+                String origen = p.getOrigenOACI();
+                String destino = p.getDestinoOACI();
+                int saltosMin = datasetDia.distanciaEnSaltos(origen, destino);
+                System.out.println(String.format(Locale.ROOT,
+                        "    %s | %s→%s | cant=%d | saltos_min=%d",
+                        p.getId(), origen, destino, p.getCantidad(),
+                        saltosMin == Integer.MAX_VALUE ? -1 : saltosMin));
+            }
+        }
+
+        if (!fueraPlazo.isEmpty()) {
+            System.out.println("  [DIAG] FUERA DE PLAZO (" + fueraPlazo.size() + "):");
+            for (Paquete p : fueraPlazo) {
+                Ruta ruta = asignadas.get(p.getId());
+                LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datasetDia, config);
+                Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datasetDia, config);
+                LocalDateTime deadline = creacion.plus(plazo);
+                LocalDateTime llegada = ruta.getLlegadaUtc();
+                long retrasoMin = Duration.between(deadline, llegada).toMinutes();
+                boolean mismoContinente = plazo.equals(config.getPlazoMismoContinente());
+                System.out.println(String.format(Locale.ROOT,
+                        "    %s | %s→%s | cant=%d | escalas=%d | creado=%s | deadline=%s | llega=%s | retraso=%dm | %s",
+                        p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad(),
+                        ruta.getCantidadSaltos(),
+                        creacion.toString(), deadline.toString(), llegada.toString(),
+                        retrasoMin,
+                        mismoContinente ? "MISMO_CONTINENTE(24h)" : "INTERCONTINENTAL(48h)"));
+
+                // Mostrar ruta
+                System.out.print("      Ruta: ");
+                for (var v : ruta.getVuelos()) {
+                    System.out.print(v.getId() + "(" + v.getSalidaUtc().toString() + "→" + v.getLlegadaUtc().toString() + ") ");
+                }
+                System.out.println();
+            }
+        }
     }
 
     private List<ResultadoEnvio> construirResultadosEnvio(Dataset datasetDia, Solucion solucion, Config_Simulacion config) {
@@ -421,33 +479,35 @@ public final class StandardExperimentPipeline {
         config.setPlazoMismoContinente(Duration.ofHours(24));
         config.setPlazoIntercontinental(Duration.ofHours(48));
         config.setMinimaConexion(Duration.ofMinutes(30));
-        // Horizonte adaptativo: no buscar más allá de los vuelos cargados
         int diasDisponibles = diasVuelos > 0 ? diasVuelos : 1095;
         long horasMaximas = Math.min(240L, diasDisponibles * 24L);
         config.setHorizonteBusqueda(Duration.ofHours(horasMaximas));
-        // Escalas adaptativas: con pocos días no hay tiempo para 3 conexiones
         int maxEscalas = diasDisponibles <= 3 ? 2 : 3;
         config.setMaxEscalas(maxEscalas);
-        // Iteraciones y hormigas adaptativas: con muchos paquetes reducir para no explotar
+
         boolean muchosPaquetes = totalPaquetes > 5000;
         boolean muchosVuelos = diasVuelos >= 100;
+
         if (muchosPaquetes && muchosVuelos) {
-            config.setMaxRutasPorPaquete(25);
-            config.setHorizonteBusqueda(Duration.ofHours(720)); // 30 dias
-            config.setIteracionesALNS(50);
-            config.setIteracionesACO(25);
+            config.setMaxRutasPorPaquete(50);
+            config.setHorizonteBusqueda(Duration.ofHours(2160)); // 90 días
+            config.setIteracionesALNS(100);
+            config.setIteracionesACO(50);
             config.setVentanaActualizacionPesos(5);
+            config.setHormigasACO(16);
+            config.setAlphaACO(0.8);
+            config.setBetaACO(2.8);
+            config.setEvaporacionFeromona(0.3);
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTIVO] paquetes=%d vuelos=%d → iteraciones=ALNS(50)/ACO(25), maxRutas=25, horizonte=30d",
+                    "  [ADAPTIVO] paquetes=%d vuelos=%d → ALNS=100, ACO=50, maxRutas=50, horizonte=90d",
                     totalPaquetes, diasVuelos * 2866));
         } else if (muchosPaquetes) {
-            config.setMaxRutasPorPaquete(25);
-            config.setHorizonteBusqueda(Duration.ofHours(720)); // 30 dias
-            config.setIteracionesALNS(50);
-            config.setIteracionesACO(25);
+            config.setMaxRutasPorPaquete(50);
+            config.setIteracionesALNS(100);
+            config.setIteracionesACO(50);
             config.setVentanaActualizacionPesos(5);
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTIVO] paquetes=%d → iteraciones=ALNS(50)/ACO(25), maxRutas=25, horizonte=30d",
+                    "  [ADAPTIVO] paquetes=%d → ALNS=100, ACO=50, maxRutas=50",
                     totalPaquetes));
         }
         return config;

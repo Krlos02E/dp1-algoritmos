@@ -20,6 +20,7 @@ import java.util.IdentityHashMap;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -56,6 +57,14 @@ public class ACO_Strategy implements PlanificadorStrategy {
         Solucion mejorGlobal = PlanificacionUtils.evaluarAsignacion("ACO", mejorGlobalPropuesta, datos, config);
 
         int iteraciones = Math.max(1, config.getIteracionesACO());
+        // Parámetros para Lévy flights y reinicio
+        double levyMu = 0.0; // media de Lévy
+        double levySigma = 1.0; // dispersión de Lévy (aumenta con estancamiento)
+        int sinMejora = 0;
+        int umbralReinicio = Math.max(5, iteraciones / 4);
+        int reinicios = 0;
+        final int MAX_REINICIOS = 3;
+
         // Iteración ACO: varias hormigas construyen soluciones y luego se actualizan feromonas.
         for (int iter = 0; iter < iteraciones; iter++) {
             List<SolucionHormiga> solucionesIter = new ArrayList<>();
@@ -63,10 +72,16 @@ public class ACO_Strategy implements PlanificadorStrategy {
             int hormigas = Math.max(1, config.getHormigasACO());
             List<Map<String, Ruta>> propuestasHormigas = new ArrayList<>(hormigas);
 
+            // Perturbación Lévy: añadir ruido gaussiano a feromonas para explorar
+            Map<Tramo, Double> feromonasBase = new HashMap<>(feromonas);
+            if (levySigma > 1.0) {
+                levyPerturbarFeromonas(feromonasBase, levyMu, levySigma, random);
+            }
+
             // Construir soluciones de hormigas en paralelo (son independientes)
             List<Callable<Map<String, Ruta>>> tareas = new ArrayList<>(hormigas);
             for (int ant = 0; ant < hormigas; ant++) {
-                final Map<Tramo, Double> feroCopy = new HashMap<>(feromonas);
+                final Map<Tramo, Double> feroCopy = new HashMap<>(feromonasBase);
                 tareas.add(() -> construirSolucionHormiga(datos, config, candidatosPodados, feroCopy, new Random(random.nextLong())));
             }
             ExecutorService pool = Executors.newFixedThreadPool(
@@ -110,6 +125,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
 
             evaporarFeromonas(feromonas, config.getEvaporacionFeromona());
             if (solucionesIter.isEmpty()) {
+                sinMejora++;
                 continue;
             }
 
@@ -118,6 +134,23 @@ public class ACO_Strategy implements PlanificadorStrategy {
             if (mejorIter.solucion().getCostoTotal() < mejorGlobal.getCostoTotal()) {
                 mejorGlobal = mejorIter.solucion();
                 mejorGlobalPropuesta = new HashMap<>(mejorIter.propuesta());
+                sinMejora = 0;
+                levySigma = 1.0; // reset dispersión cuando hay mejora
+            } else {
+                sinMejora++;
+                // Aumentar dispersión de Lévy gradualmente para escapar óptimos locales
+                levySigma = Math.min(5.0, 1.0 + sinMejora * 0.3);
+            }
+
+            // Reinicio controlado si estancamiento prolongado
+            if (sinMejora >= umbralReinicio && reinicios < MAX_REINICIOS) {
+                reiniciarFeromonasParcial(feromonas, config);
+                reinicios++;
+                sinMejora = 0;
+                levySigma = 2.0; // reiniciar con alta exploración
+                System.out.println(String.format(Locale.ROOT,
+                        "  [ACO] reinicio %d/%d tras %d it. sin mejora",
+                        reinicios, MAX_REINICIOS, umbralReinicio));
             }
 
             int elite = Math.min(Math.max(1, config.getHormigasEliteACO()), solucionesIter.size());
@@ -543,6 +576,49 @@ public class ACO_Strategy implements PlanificadorStrategy {
                 double actual = feromonas.getOrDefault(tramo, 1.0);
                 feromonas.put(tramo, actual + deposito);
             }
+        }
+    }
+
+    /** Perturbación Lévy: añade ruido a las feromonas para escapar de óptimos locales */
+    private void levyPerturbarFeromonas(Map<Tramo, Double> feromonas, double mu, double sigma, Random rng) {
+        for (Map.Entry<Tramo, Double> entry : feromonas.entrySet()) {
+            double ruido = levySample(mu, sigma, rng);
+            double nuevo = entry.getValue() * (1.0 + ruido * 0.1);
+            entry.setValue(Math.max(0.01, nuevo));
+        }
+    }
+
+    /** Muestreo de distribución de Lévy (aproximación via transformada de Chambers-Mallows-Stuck) */
+    private double levySample(double mu, double sigma, Random rng) {
+        // α=1.5 para heavy-tailed behavior: pasos pequeños frecuentes + saltos grandes raros
+        double alpha = 1.5;
+        double u = rng.nextDouble() * Math.PI;
+        double v = -Math.log(rng.nextDouble() + 1e-10);
+        double w = Math.pow(Math.sin(u) / Math.pow(v, 1.0 / alpha), 1.0 / (alpha - 1.0))
+                * Math.sin(u - (1.0 / alpha) * Math.atan2(Math.sin(u), v));
+        return mu + sigma * w;
+    }
+
+    /** Reinicio parcial de feromonas: mantener estructura pero forzar exploración */
+    private void reiniciarFeromonasParcial(Map<Tramo, Double> feromonas, Config_Simulacion config) {
+        double minFer = Double.MAX_VALUE;
+        double maxFer = -Double.MAX_VALUE;
+        for (double v : feromonas.values()) {
+            if (v < minFer) minFer = v;
+            if (v > maxFer) maxFer = v;
+        }
+        double range = maxFer - minFer;
+        if (range < 1e-10) range = 1.0;
+
+        // Compresión: (valor - min) / range → aplana el landscape
+        double compresion = 0.6; // mantener 60% de la estructura original
+        double base = 1.0;
+        for (Map.Entry<Tramo, Double> entry : feromonas.entrySet()) {
+            double normalizado = (entry.getValue() - minFer) / range;
+            double comprimido = base + normalizado * range * compresion;
+            // Añadir ruido aleatorio para explorar
+            double ruido = (random.nextDouble() - 0.5) * range * 0.2;
+            entry.setValue(Math.max(0.05, comprimido + ruido));
         }
     }
 
