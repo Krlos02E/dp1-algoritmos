@@ -68,7 +68,10 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             solucionActual = solReversa;
         }
 
-        double temperatura = Math.max(1.0, solucionActual.getCostoTotal() * 0.05);
+double temperatura = Math.max(1.0, solucionActual.getCostoTotal() * 0.05);
+        int sinMejora = 0;
+        final int MAX_SIN_MEJORA = 5;
+        final int EVAL_CADA = 3;
 
         for (int iter = 1; iter <= Math.max(1, config.getIteracionesALNS()); iter++) {
             int opR = seleccionarPorRuleta(pesosRuptura);
@@ -77,25 +80,36 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             Map<String, Ruta> candidata = new HashMap<>(propuestaActual);
             Set<String> destruidos = aplicarRuptura(opR, candidata, datos, config, candidatos);
             aplicarReparacion(opP, candidata, new ArrayList<>(destruidos), datos, config, candidatos);
-            intentarAsignarNoAsignados(candidata, datos, config, candidatos, 20);
+            intentarAsignarNoAsignados(candidata, datos, config, candidatos, 5);
 
-            Solucion solCandidata = PlanificacionUtils.evaluarAsignacion("ALNS", candidata, datos, config);
+            Solucion solCandidata = null;
+            if (iter % EVAL_CADA == 0) {
+                solCandidata = PlanificacionUtils.evaluarAsignacion("ALNS", candidata, datos, config);
+            }
 
             double recompensa = 0.0;
-            if (solCandidata.getCostoTotal() < mejorSolucion.getCostoTotal()) {
+            if (solCandidata != null && solCandidata.getCostoTotal() < mejorSolucion.getCostoTotal()) {
                 propuestaMejor = new HashMap<>(candidata);
                 mejorSolucion = solCandidata;
                 propuestaActual = candidata;
                 solucionActual = solCandidata;
                 recompensa = 6.0;
-            } else if (solCandidata.getCostoTotal() < solucionActual.getCostoTotal()) {
+                sinMejora = 0;
+            } else if (solCandidata != null && solCandidata.getCostoTotal() < solucionActual.getCostoTotal()) {
                 propuestaActual = candidata;
                 solucionActual = solCandidata;
                 recompensa = 3.0;
-            } else if (debeAceptarPeorPorAnnealing(solCandidata, solucionActual, temperatura)) {
+                sinMejora = 0;
+            } else if (solCandidata != null && debeAceptarPeorPorAnnealing(solCandidata, solucionActual, temperatura)) {
                 propuestaActual = candidata;
                 solucionActual = solCandidata;
                 recompensa = 1.0;
+            } else {
+                sinMejora++;
+            }
+
+            if (sinMejora >= MAX_SIN_MEJORA) {
+                break;
             }
 
             usosRuptura[opR]++;

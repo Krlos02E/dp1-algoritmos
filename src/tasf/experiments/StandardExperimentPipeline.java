@@ -240,21 +240,37 @@ Map<LocalDate, Integer> conteoPorDia;
         LocalDate fechaInicioEfectiva = fechaInicioVuelos;
         int diasVuelosEfectivos = diasVuelos;
         LocalDate ventanaFin = null;
+        
         if (diasVuelos > 0 && !fechasNecesarias.isEmpty()) {
             LocalDate maxFecha = fechasNecesarias.stream().max(LocalDate::compareTo).orElseThrow();
-            long buffer = configHorizonteDias(); // dias extra despues del ultimo envio para horizonte
-            long diasDesdeInicio = maxFecha.toEpochDay() - fechaInicioVuelos.toEpochDay();
-            long diasRequeridos = diasDesdeInicio + buffer + 1;
-
-            if (diasRequeridos <= diasVuelos) {
-                fechaInicioEfectiva = fechaInicioVuelos;
-                diasVuelosEfectivos = (int) diasRequeridos;
+            
+            // Fix: si tenemos fechaEnviosDia específica, centrar ventana en esa fecha
+            // con margen de 2 días antes y diasVuelos después
+            if (fechaEnviosDia > 0) {
+                // Ventana: fechaEnvios - 2 hasta fechaEnvios + diasVuelos
+                fechaInicioEfectiva = maxFecha.minusDays(2);
+                diasVuelosEfectivos = diasVuelos + 2;  // +2 días de margen
             } else {
-                // Always use required size - do NOT shrink to diasVuelos
-                // This ensures we have flights covering package creation dates + buffer
-                fechaInicioEfectiva = fechaInicioVuelos;
-                diasVuelosEfectivos = (int) diasRequeridos;
+                // Comportamiento original para múltiples fechas (barrerPorcentaje, etc.)
+                long buffer = configHorizonteDias();
+                long diasDesdeInicio = maxFecha.toEpochDay() - fechaInicioVuelos.toEpochDay();
+                long diasRequeridos = diasDesdeInicio + buffer + 1;
+                
+                if (diasRequeridos <= diasVuelos) {
+                    fechaInicioEfectiva = fechaInicioVuelos;
+                    diasVuelosEfectivos = (int) diasRequeridos;
+                } else {
+                    fechaInicioEfectiva = fechaInicioVuelos;
+                    diasVuelosEfectivos = (int) diasRequeridos;
+                }
             }
+            ventanaFin = fechaInicioEfectiva.plusDays(diasVuelosEfectivos - 1);
+        } else if (fechaEnviosDia > 0 && !fechasNecesarias.isEmpty() && diasVuelos == 0) {
+            // Fix: si diasVuelos no especificado (0) pero hay fechaEnviosDia,
+            // usar default de 3 días con margen
+            LocalDate maxFecha = fechasNecesarias.stream().max(LocalDate::compareTo).orElseThrow();
+            fechaInicioEfectiva = maxFecha.minusDays(2);
+            diasVuelosEfectivos = 3 + 2;  // default 3 + 2 margen = 5 días
             ventanaFin = fechaInicioEfectiva.plusDays(diasVuelosEfectivos - 1);
         }
 
