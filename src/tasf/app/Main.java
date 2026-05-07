@@ -51,12 +51,14 @@ public class Main {
 
             StandardExperimentPipeline.PipelineResult resultado = pipeline.ejecutar();
 
-            System.out.println("=== Pipeline Estandar Ejecutado ===");
-            System.out.println("Capacidad maxima diaria: " + resultado.capacidadMaximaDiaria + " maletas");
-            System.out.println("Niveles objetivo: " + resultado.nivelesObjetivo);
-            System.out.println("CSV crudo: " + resultado.rawCsv);
-            System.out.println("CSV resumen: " + resultado.summaryCsv);
-            System.out.println("Corridas totales: " + resultado.rawTable.getRows().size());
+            System.out.println("=== Ejecucion Completada ===");
+            System.out.println("Maletas/pedidos solicitados: " + resultado.totalMaletas + " maletas en " + resultado.totalPaquetes + " pedidos");
+            System.out.println("Pedidos asignados: " + resultado.pedidosAsignados + " | Sin asignar: " + resultado.sinAsignar);
+            System.out.println("Maletas asignadas: " + resultado.maletasAsignadas);
+            System.out.println("Maletas fuera de plazo: " + resultado.fueraDePlazo);
+            System.out.println("Colapso: " + (resultado.hayColapso ? "SI" : "NO"));
+            System.out.println("Costo total: " + resultado.costoTotal);
+            System.out.println("Duracion: " + resultado.duracionMs + " ms");
         } catch (Exception e) {
             System.err.println("Error ejecutando pipeline estandar: " + e.getMessage());
             e.printStackTrace();
@@ -133,7 +135,7 @@ public class Main {
             LocalDate fechaInicioVuelos = LocalDate.of(2026, 1, 2);
             int diasVuelos = 0;
             int maxEnviosPorArchivo = 0;
-            int corridasPorAlgoritmo = 10;
+            int corridasPorAlgoritmo = 1;
             LocalDate fechaEnviosFiltro = null;
             boolean usarDiaMaximoEnvios = false;
             int fechaEnviosDia = 0;
@@ -176,6 +178,24 @@ public class Main {
                     } else {
                         fechaEnviosFiltro = LocalDate.parse(valor);
                         usarDiaMaximoEnvios = false;
+                    }
+                } else if (arg.startsWith("--rango-envios=")) {
+                    String valor = arg.substring("--rango-envios=".length()).trim();
+                    String[] partes = valor.split("-");
+                    if (partes.length == 2) {
+                        int inicio = Integer.parseInt(partes[0]);
+                        int fin = Integer.parseInt(partes[1]);
+                        fechaEnviosDia = inicio;
+                        usarDiaMaximoEnvios = false;
+                        fechaEnviosFiltro = null;
+                        System.setProperty("rango.envios.inicio", String.valueOf(inicio));
+                        System.setProperty("rango.envios.fin", String.valueOf(fin));
+                    } else if (valor.contains(",")) {
+                        String[] dias = valor.split(",");
+                        fechaEnviosDia = Integer.parseInt(dias[0].trim());
+                        usarDiaMaximoEnvios = false;
+                        fechaEnviosFiltro = null;
+                        System.setProperty("rango.envios.dias", valor);
                     }
                 } else if (arg.equals("--barrer-porcentaje-envios")) {
                     barrerPorcentajeEnvios = true;

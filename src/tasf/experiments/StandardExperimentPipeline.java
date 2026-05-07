@@ -359,17 +359,16 @@ public final class StandardExperimentPipeline {
                             maletasFueraDePlazo,
                             colapso,
                             solucion.getCostoTotal(),
-                            duracionMs
+                            duracionMs,
+                            solucion
                     ));
 
                     String nivelStr = barrerPorcentajeEnvios
                             ? nivelEnvios + "%"
                             : String.valueOf(totalMaletasDia);
                     System.out.println(String.format(Locale.ROOT,
-                            "  [%s] nivel=%s corrida=%d/%d → asignados=%d/%d fuera_plazo=%d colapso=%s costo=%.0f [%dms]",
+                            "  [%s] asignados=%d/%d fuera_plazo=%d colapso=%s costo=%.0f [%dms]",
                             algoritmo.name,
-                            nivelStr,
-                            corridaGlobal, totalCorridas,
                             asignados, totalEnvios,
                             maletasFueraDePlazo,
                             colapso,
@@ -404,18 +403,57 @@ public final class StandardExperimentPipeline {
         Path outputDir = dataDir.resolve("output");
         Files.createDirectories(outputDir);
         String stamp = LocalDateTime.now().format(FILE_TS);
-        Path rawCsv = outputDir.resolve("experimentos_raw_" + stamp + ".csv");
-        Path summaryCsv = outputDir.resolve("experimentos_resumen_" + stamp + ".csv");
-
-        rawTable.writeCsv(rawCsv);
-        summaryTable.writeCsv(summaryCsv);
 
         long msTotal = (System.nanoTime() - tPipeline) / 1_000_000;
-        System.out.println(String.format(Locale.ROOT,
-                "[4/4] CSV exportados: raw=%s resumen=%s [%dms total]",
-                rawCsv.getFileName(), summaryCsv.getFileName(), msTotal));
 
-        return new PipelineResult(capacidadMaximaDiaria, nivelesObjetivo, rawTable, summaryTable, rawCsv, summaryCsv);
+        Path jsonLog = outputDir.resolve("log_" + stamp + ".json");
+        generarLogJson(jsonLog, rawRecords, dataset, config, fechaInicioEfectiva, ventanaFin);
+
+        int totalPaquetes = 0;
+        int totalMaletas = 0;
+        int maletasAsignadas = 0;
+        int sinAsignar = 0;
+        int fueraDePlazo = 0;
+        boolean hayColapso = false;
+        double costoTotal = 0;
+        long duracionMs = 0;
+        int pedidosAsignados = 0;
+
+        if (!rawRecords.isEmpty()) {
+            RunRecord r = rawRecords.get(0);
+            totalPaquetes = r.totalEnvios;
+            totalMaletas = r.nivelCargaMaletas;
+            sinAsignar = r.noAsignados;
+            hayColapso = r.hayColapso;
+            costoTotal = r.costoTotal;
+            duracionMs = r.duracionMs;
+
+            Dataset datasetDia = dataset;
+            Map<String, Ruta> rutasAsignadas = r.solucion.getRutasAsignadas();
+            int maletasAsignadasReal = 0;
+            int maletasFueraPlazo = 0;
+            int pedidosConRuta = 0;
+            for (Paquete p : datasetDia.getPaquetes()) {
+                Ruta ruta = rutasAsignadas.get(p.getId());
+                if (ruta != null) {
+                    pedidosConRuta++;
+                    maletasAsignadasReal += p.getCantidad();
+                    if (PlanificacionUtils.estaFueraDePlazo(p, ruta, datasetDia, config)) {
+                        maletasFueraPlazo += p.getCantidad();
+                    }
+                }
+            }
+            maletasAsignadas = maletasAsignadasReal;
+            fueraDePlazo = maletasFueraPlazo;
+            pedidosAsignados = pedidosConRuta;
+        }
+
+        System.out.println(String.format(Locale.ROOT,
+                "[4/4] Log exportado: %s [%dms total]",
+                jsonLog.getFileName(), msTotal));
+
+        return new PipelineResult(capacidadMaximaDiaria, nivelesObjetivo, rawTable, summaryTable, null, null,
+                totalPaquetes, totalMaletas, maletasAsignadas, pedidosAsignados, sinAsignar, fueraDePlazo, hayColapso, costoTotal, duracionMs);
     }
 
     private Solucion ejecutarAlgoritmo(AlgorithmSpec algoritmo, Dataset datasetDia, Config_Simulacion config) {
@@ -595,6 +633,7 @@ public final class StandardExperimentPipeline {
         public final boolean hayColapso;
         public final double costoTotal;
         public final long duracionMs;
+        public final Solucion solucion;
 
         public RunRecord(
                 String algoritmo,
@@ -610,7 +649,8 @@ public final class StandardExperimentPipeline {
                 int maletasFueraDePlazo,
                 boolean hayColapso,
                 double costoTotal,
-                long duracionMs
+                long duracionMs,
+                Solucion solucion
         ) {
             this.algoritmo = algoritmo;
             this.nivelCargaMaletas = nivelCargaMaletas;
@@ -626,6 +666,7 @@ public final class StandardExperimentPipeline {
             this.hayColapso = hayColapso;
             this.costoTotal = costoTotal;
             this.duracionMs = duracionMs;
+            this.solucion = solucion;
         }
     }
 
@@ -730,7 +771,7 @@ public final class StandardExperimentPipeline {
             Files.write(outputCsv, lines, StandardCharsets.UTF_8);
         }
 
-        public List<String> toCsvLines() {
+public List<String> toCsvLines() {
             List<String> lines = new ArrayList<>();
             if (!summary) {
                 lines.add("algoritmo,nivelCargaMaletas,objetivoEnvios,fechaSeleccionada,enviosDiaSeleccionado,corrida,totalEnvios,asignados,noAsignados,porcentajeExito,maletasFueraDePlazo,hayColapso,costoTotal,duracionMs");
@@ -747,11 +788,12 @@ public final class StandardExperimentPipeline {
                             r.totalEnvios,
                             r.asignados,
                             r.noAsignados,
-                            r.porcentajeExito,
+                            r.porcentajeExito / 100.0,
                             r.maletasFueraDePlazo,
                             r.hayColapso,
                             r.costoTotal,
-                            r.duracionMs));
+                            r.duracionMs
+                    ));
                 }
             } else {
                 lines.add("algoritmo,nivelCargaMaletas,corridas,promedioExito,tasaColapso,promedioCosto,promedioDuracionMs,promedioNoAsignados,promedioFueraPlazo");
@@ -788,6 +830,15 @@ public final class StandardExperimentPipeline {
         public final ResultTable summaryTable;
         public final Path rawCsv;
         public final Path summaryCsv;
+        public final int totalPaquetes;
+        public final int totalMaletas;
+        public final int maletasAsignadas;
+        public final int pedidosAsignados;
+        public final int sinAsignar;
+        public final int fueraDePlazo;
+        public final boolean hayColapso;
+        public final double costoTotal;
+        public final long duracionMs;
 
         public PipelineResult(
                 int capacidadMaximaDiaria,
@@ -795,7 +846,16 @@ public final class StandardExperimentPipeline {
                 ResultTable rawTable,
                 ResultTable summaryTable,
                 Path rawCsv,
-                Path summaryCsv
+                Path summaryCsv,
+                int totalPaquetes,
+                int totalMaletas,
+                int maletasAsignadas,
+                int pedidosAsignados,
+                int sinAsignar,
+                int fueraDePlazo,
+                boolean hayColapso,
+                double costoTotal,
+                long duracionMs
         ) {
             this.capacidadMaximaDiaria = capacidadMaximaDiaria;
             this.nivelesObjetivo = Collections.unmodifiableList(new ArrayList<>(nivelesObjetivo));
@@ -803,6 +863,15 @@ public final class StandardExperimentPipeline {
             this.summaryTable = summaryTable;
             this.rawCsv = rawCsv;
             this.summaryCsv = summaryCsv;
+            this.totalPaquetes = totalPaquetes;
+            this.totalMaletas = totalMaletas;
+            this.maletasAsignadas = maletasAsignadas;
+            this.pedidosAsignados = pedidosAsignados;
+            this.sinAsignar = sinAsignar;
+            this.fueraDePlazo = fueraDePlazo;
+            this.hayColapso = hayColapso;
+            this.costoTotal = costoTotal;
+            this.duracionMs = duracionMs;
         }
     }
 
@@ -832,5 +901,119 @@ public final class StandardExperimentPipeline {
         int getCount() {
             return count;
         }
+    }
+
+    private void generarLogJson(Path outputPath, List<RunRecord> records, Dataset dataset, Config_Simulacion config,
+                           LocalDate fechaInicioVuelos, LocalDate fechaFinVuelos) throws IOException {
+        StringBuilder json = new StringBuilder();
+        json.append("{\n");
+
+        if (records.isEmpty()) {
+            json.append("  \"error\": \"no hay resultados\"\n");
+            json.append("}\n");
+            Files.writeString(outputPath, json.toString(), StandardCharsets.UTF_8);
+            return;
+        }
+
+        RunRecord record = records.get(0);
+        String algoritmo = record.algoritmo;
+        String fechaSeleccionada = String.valueOf(record.fechaSeleccionada);
+        Solucion solucion = record != null ? record.solucion : null;
+
+        int totalMaletas = record.nivelCargaMaletas;
+        int totalPedidos = record.totalEnvios;
+        int maletasAsignadas = 0;
+        int pedidosAsignados = 0;
+        int maletasFueraPlazo = 0;
+        int noAsignados = record.noAsignados;
+        boolean hayColapso = record.hayColapso;
+        double costoTotal = record.costoTotal;
+        long duracionMs = record.duracionMs;
+
+        if (solucion != null && config != null) {
+            Map<String, Ruta> rutas = solucion.getRutasAsignadas();
+            for (Paquete p : dataset.getPaquetes()) {
+                Ruta r = rutas.get(p.getId());
+                if (r != null) {
+                    pedidosAsignados++;
+                    maletasAsignadas += p.getCantidad();
+                    if (PlanificacionUtils.estaFueraDePlazo(p, r, dataset, config)) {
+                        maletasFueraPlazo += p.getCantidad();
+                    }
+                }
+            }
+        }
+
+        json.append("  \"metadata\": {\n");
+        json.append("    \"algoritmo\": \"").append(algoritmo).append("\",\n");
+        json.append("    \"maletasTotales\": ").append(totalMaletas).append(",\n");
+        json.append("    \"maletasAsignadas\": ").append(maletasAsignadas).append(",\n");
+        json.append("    \"pedidosTotales\": ").append(totalPedidos).append(",\n");
+        json.append("    \"pedidosAsignados\": ").append(pedidosAsignados).append(",\n");
+        json.append("    \"fechaSeleccionada\": \"").append(fechaSeleccionada).append("\",\n");
+        json.append("    \"rangoDiasVuelos\": \"").append(fechaInicioVuelos).append(" a ").append(fechaFinVuelos).append("\",\n");
+        json.append("    \"hayColapso\": ").append(hayColapso).append(",\n");
+        json.append("    \"maletasFueraDePlazo\": ").append(maletasFueraPlazo).append(",\n");
+        json.append("    \"pedidosSinAsignar\": ").append(noAsignados).append(",\n");
+        json.append("    \"costoTotal\": ").append(String.format(Locale.ROOT, "%.2f", costoTotal)).append(",\n");
+        json.append("    \"duracionMs\": ").append(duracionMs).append(",\n");
+        json.append("    \"generado\": \"").append(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("\"\n");
+        json.append("  },\n");
+
+        json.append("  \"asignaciones\": [\n");
+
+        List<Paquete> paquetes;
+        if (solucion != null && config != null) {
+            Map<String, Ruta> rutasAsignadas = solucion.getRutasAsignadas();
+            paquetes = dataset.getPaquetes();
+
+            int count = 0;
+            for (Paquete p : paquetes) {
+                Ruta ruta = rutasAsignadas.get(p.getId());
+                if (ruta == null) continue;
+
+                if (count > 0) json.append(",\n");
+                json.append("    {\n");
+                json.append("      \"pedidoId\": \"").append(p.getId()).append("\",\n");
+                json.append("      \"origen\": \"").append(p.getOrigenOACI()).append("\",\n");
+                json.append("      \"destino\": \"").append(p.getDestinoOACI()).append("\",\n");
+
+                LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, dataset, config);
+                json.append("      \"creacion\": \"").append(creacion.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("Z\",\n");
+
+                Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, dataset, config);
+                LocalDateTime deadline = creacion.plus(plazo);
+                json.append("      \"deadline\": \"").append(deadline.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("Z\",\n");
+
+                json.append("      \"paquetes\": ").append(p.getCantidad()).append(",\n");
+                json.append("      \"ruta\": [\n");
+
+                List<tasf.model.Vuelo> vuelos = ruta.getVuelos();
+                for (int i = 0; i < vuelos.size(); i++) {
+                    tasf.model.Vuelo v = vuelos.get(i);
+                    if (i > 0) json.append(",\n");
+                    json.append("        {\n");
+                    json.append("          \"vueloId\": \"").append(v.getId()).append("\",\n");
+                    json.append("          \"origen\": \"").append(v.getOrigen().getCodigoOACI()).append("\",\n");
+                    json.append("          \"destino\": \"").append(v.getDestino().getCodigoOACI()).append("\",\n");
+                    json.append("          \"salida\": \"").append(v.getSalidaUtc().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("Z\",\n");
+                    json.append("          \"llegada\": \"").append(v.getLlegadaUtc().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("Z\"\n");
+                    json.append("        }");
+                }
+                json.append("\n      ]\n");
+                json.append("    }");
+                count++;
+            }
+        } else {
+            json.append("  ]\n");
+            json.append("}\n");
+            Files.writeString(outputPath, json.toString(), StandardCharsets.UTF_8);
+            return;
+        }
+
+        json.append("\n  ]\n");
+        json.append("}\n");
+
+        Files.writeString(outputPath, json.toString(), StandardCharsets.UTF_8);
     }
 }
