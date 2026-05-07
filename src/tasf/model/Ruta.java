@@ -10,9 +10,15 @@ import java.util.Set;
 
 public class Ruta {
     private final List<Vuelo> vuelos;
+    private final Set<Tramo> tramos;
 
     public Ruta(List<Vuelo> vuelos) {
         this.vuelos = Collections.unmodifiableList(new ArrayList<>(vuelos));
+        Set<Tramo> tmp = new HashSet<>();
+        for (Vuelo vuelo : this.vuelos) {
+            tmp.add(vuelo.getTramo());
+        }
+        this.tramos = Collections.unmodifiableSet(tmp);
     }
 
     public List<Vuelo> getVuelos() {
@@ -48,10 +54,6 @@ public class Ruta {
     }
 
     public Set<Tramo> getTramos() {
-        Set<Tramo> tramos = new HashSet<>();
-        for (Vuelo vuelo : vuelos) {
-            tramos.add(vuelo.getTramo());
-        }
         return tramos;
     }
 }

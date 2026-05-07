@@ -15,6 +15,7 @@ public class Vuelo {
     private final int capacidadCarga;
     private final LocalDateTime salidaUtc;
     private final LocalDateTime llegadaUtc;
+    private final Tramo tramo;
 
     public Vuelo(
             String id,
@@ -49,6 +50,7 @@ public class Vuelo {
 
         this.salidaUtc = salidaUtcTmp;
         this.llegadaUtc = llegadaUtcTmp;
+        this.tramo = new Tramo(origen.getCodigoOACI(), destino.getCodigoOACI());
     }
 
     public String getId() {
@@ -92,7 +94,7 @@ public class Vuelo {
     }
 
     public Tramo getTramo() {
-        return new Tramo(origen.getCodigoOACI(), destino.getCodigoOACI());
+        return tramo;
     }
 
     @Override

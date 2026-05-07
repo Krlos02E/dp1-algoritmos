@@ -49,29 +49,21 @@ public class MinCostFlowAssigner {
                     .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
         });
 
-        int intentos = 0;
-        int exitos = 0;
-        int alternativosExitosos = 0;
-
         for (Paquete paquete : paquetesOrdenados) {
             Ruta rutaSeleccionada = rutasPlanificadas.get(paquete.getId());
             if (rutaSeleccionada == null) {
                 continue;
             }
 
-            intentos++;
             LocalDateTime creacionUtc = PlanificacionUtils.getCreacionUtc(paquete, datos, config);
             boolean factible = estado.reservarRutaSiFactible(paquete, rutaSeleccionada, creacionUtc, datos, config);
             if (factible) {
                 asignaciones.put(paquete.getId(), rutaSeleccionada);
-                exitos++;
             } else {
                 Ruta rutaAlternativa = buscarRutaAlternativa(paquete, candidatos, estado, creacionUtc, datos, config);
                 if (rutaAlternativa != null) {
                     estado.reservarRutaSiFactible(paquete, rutaAlternativa, creacionUtc, datos, config);
                     asignaciones.put(paquete.getId(), rutaAlternativa);
-                    alternativosExitosos++;
-                    exitos++;
                 }
             }
         }
@@ -146,14 +138,12 @@ public class MinCostFlowAssigner {
                     .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
         });
 
-        int reasignados = 0;
         for (Paquete paquete : sinAsignar) {
             LocalDateTime creacionUtc = PlanificacionUtils.getCreacionUtc(paquete, datos, config);
             Ruta ruta = buscarRutaAlternativa(paquete, candidatos, estado, creacionUtc, datos, config);
             if (ruta != null) {
                 estado.reservarRutaSiFactible(paquete, ruta, creacionUtc, datos, config);
                 asignaciones.put(paquete.getId(), ruta);
-                reasignados++;
             }
         }
 

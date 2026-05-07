@@ -27,11 +27,10 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
-import java.util.*;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -353,8 +352,6 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         System.out.println("[3/4] Algoritmo ejecutando...");
 
         List<RunRecord> rawRecords = new ArrayList<>();
-        boolean encontradoUmbral = false;
-        int corridaGlobal = 0;
 
         for (int nivelEnvios : nivelesObjetivo) {
             DistribucionEnviosPorDia.DiaSeleccionado dia = diaUnico != null
@@ -364,10 +361,8 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             Dataset datasetDia = construirDatasetDia(dataset, paquetesTrabajo);
             int totalMaletasDia = paquetesTrabajo.stream().mapToInt(Paquete::getCantidad).sum();
 
-            boolean cumpleTodo = true;
             for (AlgorithmSpec algoritmo : algoritmos) {
                 for (int corrida = 1; corrida <= corridasPorAlgoritmo; corrida++) {
-                    corridaGlobal++;
                     long t0 = System.nanoTime();
                     Solucion solucion = ejecutarAlgoritmo(algoritmo, datasetDia, config);
                     long duracionMs = (System.nanoTime() - t0) / 1_000_000;
@@ -379,13 +374,11 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                     int noAsignados = solucion.getPaquetesNoAsignados().size();
                     int maletasFueraDePlazo = solucion.getMaletasFueraDePlazo();
                     double porcentajeExito = totalEnvios == 0 ? 0.0 : (100.0 * asignados) / totalEnvios;
-                        boolean cumplePlazo = noAsignados == 0 && maletasFueraDePlazo == 0;
-                        cumpleTodo = cumpleTodo && cumplePlazo;
 
-                        if (maletasFueraDePlazo > 0) {
-                            System.out.println("  [DIAG] FUERA DE PLAZO detected: " + maletasFueraDePlazo + " maletas");
-                            diagnosticarPaquetes(datasetDia, solucion, config);
-                        }
+                    if (maletasFueraDePlazo > 0) {
+                        System.out.println("  [DIAG] FUERA DE PLAZO detected: " + maletasFueraDePlazo + " maletas");
+                        diagnosticarPaquetes(datasetDia, solucion, config);
+                    }
 
                     rawRecords.add(new RunRecord(
                             algoritmo.name,
@@ -405,8 +398,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                             solucion
                     ));
 
-                     String nivelStr = String.valueOf(totalMaletasDia);
-                     System.out.println(String.format(Locale.ROOT,
+                    System.out.println(String.format(Locale.ROOT,
                              "  [%s] asignados=%d/%d fuera_plazo=%d colapso=%s costo=%.0f [%dms]",
                              algoritmo.name,
                              asignados, totalEnvios,
@@ -557,23 +549,6 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
 
     private Dataset construirDatasetDia(Dataset base, List<Paquete> paquetesDia) {
         return new Dataset(base.getAeropuertos(), base.getVuelos(), new ArrayList<>(paquetesDia));
-    }
-
-    private List<Paquete> seleccionarPaquetesPorcentaje(
-            List<Paquete> paquetesDia,
-            int porcentaje,
-            Dataset base,
-            Config_Simulacion config
-    ) {
-        List<Paquete> ordenados = new ArrayList<>(paquetesDia);
-        ordenados.sort(Comparator
-                .comparing((Paquete p) -> PlanificacionUtils.getCreacionUtc(p, base, config))
-                .thenComparing(Paquete::getId));
-
-        int total = ordenados.size();
-        int cantidad = (int) Math.ceil(total * (porcentaje / 100.0));
-        cantidad = Math.max(1, Math.min(total, cantidad));
-        return new ArrayList<>(ordenados.subList(0, cantidad));
     }
 
     private Config_Simulacion construirConfig(int totalPaquetes) {

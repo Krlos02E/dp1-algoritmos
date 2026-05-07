@@ -18,7 +18,6 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -233,7 +232,6 @@ public final class DatasetTextoLoader {
             Set<LocalDate> fechasFiltro
     ) throws IOException {
         boolean filtrarPorFecha = fechasFiltro != null && !fechasFiltro.isEmpty();
-        DateTimeFormatter fmt = DateTimeFormatter.BASIC_ISO_DATE;
 
         List<Paquete> paquetes = new ArrayList<>();
         List<Path> archivos = new ArrayList<>();

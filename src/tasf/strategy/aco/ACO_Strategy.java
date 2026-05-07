@@ -20,7 +20,6 @@ import java.util.IdentityHashMap;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
@@ -31,6 +30,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 public class ACO_Strategy implements PlanificadorStrategy {
+    private static final List<Ruta> EMPTY_RUTA_LIST = List.of();
+
     private final Random random;
 
     public ACO_Strategy() {
@@ -65,6 +66,9 @@ public class ACO_Strategy implements PlanificadorStrategy {
         int reinicios = 0;
         final int MAX_REINICIOS = 3;
 
+        int numThreads = Math.min(Math.max(1, config.getHormigasACO()), Runtime.getRuntime().availableProcessors());
+        ExecutorService pool = Executors.newFixedThreadPool(numThreads);
+
         // Iteración ACO: varias hormigas construyen soluciones y luego se actualizan feromonas.
         for (int iter = 0; iter < iteraciones; iter++) {
             List<SolucionHormiga> solucionesIter = new ArrayList<>();
@@ -79,14 +83,12 @@ public class ACO_Strategy implements PlanificadorStrategy {
             }
 
             // Construir soluciones de hormigas en paralelo (son independientes)
+            // El mapa de feromonas es solo lectura durante construcción, no necesita copia
             List<Callable<Map<String, Ruta>>> tareas = new ArrayList<>(hormigas);
             for (int ant = 0; ant < hormigas; ant++) {
-                final Map<Tramo, Double> feroCopy = new HashMap<>(feromonasBase);
-                tareas.add(() -> construirSolucionHormiga(datos, config, candidatosPodados, feroCopy, new Random(random.nextLong())));
+                final Map<Tramo, Double> feroRef = feromonasBase;
+                tareas.add(() -> construirSolucionHormiga(datos, config, candidatosPodados, feroRef, new Random(random.nextLong())));
             }
-            ExecutorService pool = Executors.newFixedThreadPool(
-                    Math.min(hormigas, Runtime.getRuntime().availableProcessors())
-            );
             try {
                 List<Future<Map<String, Ruta>>> futures = pool.invokeAll(tareas);
                 for (Future<Map<String, Ruta>> f : futures) {
@@ -101,8 +103,6 @@ public class ACO_Strategy implements PlanificadorStrategy {
                 for (int ant = 0; ant < hormigas; ant++) {
                     propuestasHormigas.add(construirSolucionHormiga(datos, config, candidatosPodados, feromonas));
                 }
-            } finally {
-                pool.shutdown();
             }
 
             // Post-proceso secuencial: reencaminamiento y evaluación
@@ -173,6 +173,8 @@ public class ACO_Strategy implements PlanificadorStrategy {
             }
         }
 
+        pool.shutdown();
+
         Solucion salida = PlanificacionUtils.evaluarAsignacion("ACO", mejorGlobalPropuesta, datos, config);
         Map<String, Ruta> refinada = refinarSolucionLocal(mejorGlobalPropuesta, candidatosPodados, datos, config);
         Solucion salidaRefinada = PlanificacionUtils.evaluarAsignacion("ACO", refinada, datos, config);
@@ -213,7 +215,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
         });
 
         for (Paquete paquete : paquetes) {
-            List<Ruta> rutasPaquete = candidatos.getOrDefault(paquete.getId(), List.of());
+            List<Ruta> rutasPaquete = candidatos.getOrDefault(paquete.getId(), EMPTY_RUTA_LIST);
             Ruta rutaActual = mejor.get(paquete.getId());
             for (Ruta alternativa : rutasPaquete) {
                 if (rutaActual != null && rutaActual.equals(alternativa)) {
@@ -263,15 +265,15 @@ public class ACO_Strategy implements PlanificadorStrategy {
         List<Paquete> paquetes = new ArrayList<>(datos.getPaquetes());
         // Ordenar por numero de rutas candidatas (asc), luego por creacion
         paquetes.sort((a, b) -> {
-            int na = candidatos.getOrDefault(a.getId(), List.of()).size();
-            int nb = candidatos.getOrDefault(b.getId(), List.of()).size();
+            int na = candidatos.getOrDefault(a.getId(), EMPTY_RUTA_LIST).size();
+            int nb = candidatos.getOrDefault(b.getId(), EMPTY_RUTA_LIST).size();
             if (na != nb) return Integer.compare(na, nb);
             return PlanificacionUtils.getCreacionUtc(a, datos, config)
                     .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
         });
 
         for (Paquete paquete : paquetes) {
-            List<Ruta> rutasPaquete = candidatos.getOrDefault(paquete.getId(), List.of());
+            List<Ruta> rutasPaquete = candidatos.getOrDefault(paquete.getId(), EMPTY_RUTA_LIST);
             List<RutaProb> factibles = new ArrayList<>();
             double total = 0.0;
 
@@ -390,10 +392,6 @@ public class ACO_Strategy implements PlanificadorStrategy {
         return rutas.get(rutas.size() - 1).ruta;
     }
 
-    private Ruta seleccionarRutaProbabilistica(List<RutaProb> rutas, double total) {
-        return seleccionarRutaProbabilistica(rutas, total, this.random);
-    }
-
     private Set<String> seleccionarVuelosBloqueados(Map<String, Ruta> propuesta, Config_Simulacion config) {
         if (propuesta.isEmpty()) {
             return Set.of();
@@ -455,7 +453,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
                     paquete,
                     estado,
                     propuesta,
-                    candidatos.getOrDefault(paquete.getId(), List.of()),
+                    candidatos.getOrDefault(paquete.getId(), EMPTY_RUTA_LIST),
                     vuelosBloqueados,
                     datos,
                     config,
