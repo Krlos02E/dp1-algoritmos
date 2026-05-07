@@ -23,19 +23,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.time.Duration;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Map;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -69,6 +65,8 @@ public final class StandardExperimentPipeline {
     private final boolean usarDiaMaximoEnvios;
     private final int fechaEnviosDia;
     private final int duracionEnvios;
+    private final LocalDate fechaEnviosRangoInicio;
+    private final LocalDate fechaEnviosRangoFin;
     private final List<AlgorithmSpec> algoritmos;
 
     public StandardExperimentPipeline(
@@ -81,6 +79,8 @@ public final class StandardExperimentPipeline {
             boolean usarDiaMaximoEnvios,
             int fechaEnviosDia,
             int duracionEnvios,
+            LocalDate fechaEnviosRangoInicio,
+            LocalDate fechaEnviosRangoFin,
             List<AlgorithmSpec> algoritmos
     ) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir no puede ser null");
@@ -92,6 +92,8 @@ public final class StandardExperimentPipeline {
         this.usarDiaMaximoEnvios = usarDiaMaximoEnvios;
         this.fechaEnviosDia = fechaEnviosDia;
         this.duracionEnvios = duracionEnvios;
+        this.fechaEnviosRangoInicio = fechaEnviosRangoInicio;
+        this.fechaEnviosRangoFin = fechaEnviosRangoFin;
         if (algoritmos == null || algoritmos.isEmpty()) {
             throw new IllegalArgumentException("Debe haber al menos un algoritmo");
         }
@@ -109,6 +111,8 @@ public final class StandardExperimentPipeline {
                    false, // usarDiaMaximoEnvios
                    0, // fechaEnviosDia
                    1, // duracionEnvios
+                   null, // fechaEnviosRangoInicio
+                   null, // fechaEnviosRangoFin
                   List.of(
                           new AlgorithmSpec("ALNS", () -> new ALNS_RutasPlanner(17L)),
                           new AlgorithmSpec("ACO", () -> new ACO_RutasPlanner(17L))
@@ -140,13 +144,24 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
         Set<LocalDate> fechasNecesarias = new HashSet<>();
         long msScan;
         LocalDate fechaReferencia = null;
-        if (fechaEnviosDia > 0 && duracionEnvios > 0) {
-            // Rango de fechas: fechaEnviosDia + duracionEnvios días
-            // ej: fecha=3, duracion=5 -> días 3,4,5,6,7
-            LocalDate fechaInicioDefault = LocalDate.of(2026, 1, 1);
-            fechaReferencia = fechaInicioDefault.plusDays(fechaEnviosDia - 1);
+        if (fechaEnviosRangoInicio != null && fechaEnviosRangoFin != null) {
+            // Rango de fechas explícito con fechas reales
+            System.out.println(String.format("Rango explícito: %s a %s (%d días)",
+                    fechaEnviosRangoInicio, fechaEnviosRangoFin, duracionEnvios));
+            LocalDate current = fechaEnviosRangoInicio;
+            while (!current.isAfter(fechaEnviosRangoFin)) {
+                fechasNecesarias.add(current);
+                current = current.plusDays(1);
+            }
+            fechaReferencia = fechaEnviosRangoInicio;
+            conteoPorDia = new HashMap<>();
+            msScan = 0;
+        } else if (fechaEnviosDia > 0 && duracionEnvios > 0) {
+            // Rango de fechas por índice de día (relativo a fechaInicioVuelos)
+            LocalDate fechaInicioBase = fechaInicioVuelos;
+            fechaReferencia = fechaInicioBase.plusDays(fechaEnviosDia - 1);
             LocalDate fechaFin = fechaReferencia.plusDays(duracionEnvios - 1);
-            System.out.println(String.format("Escaneo: días %d-%d (%s a %s) (optimizado)", 
+            System.out.println(String.format("Escaneo: días %d-%d (%s a %s) (optimizado)",
                     fechaEnviosDia, fechaEnviosDia + duracionEnvios - 1, fechaReferencia, fechaFin));
             for (int i = 0; i < duracionEnvios; i++) {
                 fechasNecesarias.add(fechaReferencia.plusDays(i));
@@ -154,11 +169,11 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
             conteoPorDia = new HashMap<>();
             msScan = 0;
         } else if (fechaEnviosDia > 0) {
-            // Solo un día
+            // Solo un día por índice
             conteoPorDia = new HashMap<>();
             msScan = 0;
-            LocalDate fechaInicioDefault = LocalDate.of(2026, 1, 1);
-            fechaReferencia = fechaInicioDefault.plusDays(fechaEnviosDia - 1);
+            LocalDate fechaInicioBase = fechaInicioVuelos;
+            fechaReferencia = fechaInicioBase.plusDays(fechaEnviosDia - 1);
             System.out.println(String.format("Escaneo: día %d -> %s (optimizado)", fechaEnviosDia, fechaReferencia));
         } else {
             conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
@@ -173,14 +188,23 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
         }
 
         // Paso 2: Determinar qué fecha(s) se necesitan
-        int capacidadMaximaEnviosDiaria = conteoPorDia.values().stream()
+        int capacidadMaximaEnviosDiaria = conteoPorDia.isEmpty() ? 1 : conteoPorDia.values().stream()
                 .mapToInt(Integer::intValue).max().orElse(1);
         List<Integer> nivelesObjetivo;
 
-        // Si ya tenemos fechas del rango, usarlas directamente
-        if (fechaEnviosDia > 0 && duracionEnvios > 0) {
+        // Si ya tenemos fechas del rango explícito, usarlas directamente
+        if (fechaEnviosRangoInicio != null && fechaEnviosRangoFin != null) {
+            // Rango explícito: escanear para obtener conteo real
+            conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
+                    resolverCarpetaEnvios(dataDir), aeropuertos
+            );
+            int conteoTotal = 0;
+            for (LocalDate f : fechasNecesarias) {
+                conteoTotal += conteoPorDia.getOrDefault(f, 0);
+            }
+            nivelesObjetivo = List.of(Math.max(1, conteoTotal));
+        } else if (fechaEnviosDia > 0 && duracionEnvios > 0) {
             // fechasNecesarias ya calculado arriba
-            //capacidadMaximaEnviosDiaria = duracionEnvios * 500; // Estimación
             nivelesObjetivo = List.of(duracionEnvios * 500);
         } else if (usarDiaMaximoEnvios || fechaEnviosFiltro != null || fechaEnviosDia > 0) {
             if (usarDiaMaximoEnvios || fechaEnviosFiltro == null) {
@@ -231,22 +255,25 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
         LocalDate fechaInicioEfectiva = fechaInicioVuelos;
         int diasVuelosEfectivos = diasVuelos;
         LocalDate ventanaFin = null;
-        
+
         if (diasVuelos > 0 && !fechasNecesarias.isEmpty()) {
             LocalDate maxFecha = fechasNecesarias.stream().max(LocalDate::compareTo).orElseThrow();
             LocalDate minFecha = fechasNecesarias.stream().min(LocalDate::compareTo).orElseThrow();
-            
-            // Fix: si tenemos fechaEnviosDia específica o rango, centrar ventana en esas fechas
-            if (fechaEnviosDia > 0) {
+
+            if (fechaEnviosRangoInicio != null) {
+                // Rango explícito: ventana desde minFecha - 2 hasta maxFecha + diasVuelos
+                fechaInicioEfectiva = minFecha.minusDays(2);
+                diasVuelosEfectivos = diasVuelos + 2;
+            } else if (fechaEnviosDia > 0) {
                 // Ventana: desde minFecha - 2 hasta maxFecha + diasVuelos
                 fechaInicioEfectiva = minFecha.minusDays(2);
-                diasVuelosEfectivos = diasVuelos + 2;  // +2 días de margen
+                diasVuelosEfectivos = diasVuelos + 2;
             } else {
                 // Comportamiento original para múltiples fechas
                 long buffer = configHorizonteDias();
                 long diasDesdeInicio = maxFecha.toEpochDay() - fechaInicioVuelos.toEpochDay();
                 long diasRequeridos = diasDesdeInicio + buffer + 1;
-                
+
                 if (diasRequeridos <= diasVuelos) {
                     fechaInicioEfectiva = fechaInicioVuelos;
                     diasVuelosEfectivos = (int) diasRequeridos;
@@ -256,12 +283,12 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
                 }
             }
             ventanaFin = fechaInicioEfectiva.plusDays(diasVuelosEfectivos - 1);
-        } else if (fechaEnviosDia > 0 && !fechasNecesarias.isEmpty() && diasVuelos == 0) {
-            // Fix: si diasVuelos no especificado (0) pero hay fechaEnviosDia,
+        } else if (!fechasNecesarias.isEmpty() && diasVuelos == 0) {
+            // si diasVuelos no especificado (0) pero hay fechas,
             // usar default de 3 días con margen
             LocalDate maxFecha = fechasNecesarias.stream().max(LocalDate::compareTo).orElseThrow();
             fechaInicioEfectiva = maxFecha.minusDays(2);
-            diasVuelosEfectivos = 3 + 2;  // default 3 + 2 margen = 5 días
+            diasVuelosEfectivos = 3 + 2;
             ventanaFin = fechaInicioEfectiva.plusDays(diasVuelosEfectivos - 1);
         }
 
@@ -293,7 +320,25 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         int capacidadMaximaDiaria = calculadoraCapacidad.estadisticas().maximo;
 
         DistribucionEnviosPorDia.DiaSeleccionado diaUnico = null;
-        if (fechaReferencia != null) {
+        if (fechaEnviosRangoInicio != null && fechaEnviosRangoFin != null) {
+            // Rango explícito: usar TODOS los paquetes del rango completo
+            List<Paquete> paquetesRango = new ArrayList<>();
+            for (LocalDate f : fechasNecesarias) {
+                paquetesRango.addAll(distribucionEnvios.obtenerEnviosDia(f));
+            }
+            if (paquetesRango.isEmpty()) {
+                throw new IllegalArgumentException("No hay envíos para el rango: " + fechaEnviosRangoInicio + " a " + fechaEnviosRangoFin);
+            }
+            diaUnico = new DistribucionEnviosPorDia.DiaSeleccionado(
+                    fechaEnviosRangoInicio,
+                    paquetesRango,
+                    paquetesRango.size(),
+                    0
+            );
+            System.out.println(String.format(Locale.ROOT,
+                    "  [RANGO] %s a %s: %d paquetes cargados",
+                    fechaEnviosRangoInicio, fechaEnviosRangoFin, paquetesRango.size()));
+        } else if (fechaReferencia != null) {
             diaUnico = new DistribucionEnviosPorDia.DiaSeleccionado(
                     fechaReferencia,
                     distribucionEnvios.obtenerEnviosDia(fechaReferencia),
@@ -303,7 +348,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             if (diaUnico.envios.isEmpty()) {
                 throw new IllegalArgumentException("No hay envíos para la fecha: " + fechaReferencia);
             }
-}
+        }
 
         System.out.println("[3/4] Algoritmo ejecutando...");
 

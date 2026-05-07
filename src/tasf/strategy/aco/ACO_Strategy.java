@@ -127,10 +127,17 @@ public class ACO_Strategy implements PlanificadorStrategy {
                 sinMejora++;
                 continue;
             }
-if (solucionesIter.isEmpty()) {
+
+            solucionesIter.sort(Comparator.comparingDouble(h -> h.solucion().getCostoTotal()));
+            SolucionHormiga mejorIter = solucionesIter.get(0);
+            if (mejorIter.solucion().getCostoTotal() < mejorGlobal.getCostoTotal()) {
+                mejorGlobalPropuesta = new HashMap<>(mejorIter.propuesta());
+                mejorGlobal = mejorIter.solucion();
+                sinMejora = 0;
+            } else {
                 sinMejora++;
-                continue;
             }
+
             evaporarFeromonas(feromonas, config.getEvaporacionFeromona());
 
             // Reinicio controlado si estancamiento prolongado
@@ -139,9 +146,6 @@ if (solucionesIter.isEmpty()) {
                 reinicios++;
                 sinMejora = 0;
                 levySigma = 2.0; // reiniciar con alta exploración
-                System.out.println(String.format(Locale.ROOT,
-                        "  [ACO] reinicio %d/%d tras %d it. sin mejora",
-                        reinicios, MAX_REINICIOS, umbralReinicio));
             }
 
             int elite = Math.min(Math.max(1, config.getHormigasEliteACO()), solucionesIter.size());

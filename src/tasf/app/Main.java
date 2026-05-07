@@ -39,6 +39,8 @@ public class Main {
                     parametros.usarDiaMaximoEnvios,
                     parametros.fechaEnviosDia,
                     parametros.duracionEnvios,
+                    parametros.fechaEnviosRangoInicio,
+                    parametros.fechaEnviosRangoFin,
                     algoritmos
             );
 
@@ -69,6 +71,8 @@ public class Main {
         private final boolean usarDiaMaximoEnvios;
         private final int fechaEnviosDia;
         private final int duracionEnvios;
+        private final LocalDate fechaEnviosRangoInicio;
+        private final LocalDate fechaEnviosRangoFin;
         private final long semillaALNS;
         private final long semillaACO;
         private final String algoritmo;
@@ -93,6 +97,8 @@ public class Main {
             boolean usarDiaMaximoEnvios,
             int fechaEnviosDia,
             int duracionEnvios,
+            LocalDate fechaEnviosRangoInicio,
+            LocalDate fechaEnviosRangoFin,
             long semillaALNS,
             long semillaACO,
             String algoritmo
@@ -106,6 +112,8 @@ public class Main {
             this.usarDiaMaximoEnvios = usarDiaMaximoEnvios;
             this.fechaEnviosDia = fechaEnviosDia;
             this.duracionEnvios = duracionEnvios;
+            this.fechaEnviosRangoInicio = fechaEnviosRangoInicio;
+            this.fechaEnviosRangoFin = fechaEnviosRangoFin;
             this.semillaALNS = semillaALNS;
             this.semillaACO = semillaACO;
             this.algoritmo = algoritmo;
@@ -121,6 +129,8 @@ public class Main {
             boolean usarDiaMaximoEnvios = false;
             int fechaEnviosDia = 100;
             int duracionEnvios = 1;
+            LocalDate fechaEnviosRangoInicio = null;
+            LocalDate fechaEnviosRangoFin = null;
             long semillaALNS = 17L;
             long semillaACO = 17L;
             String algoritmo = "ALNS";
@@ -160,7 +170,21 @@ public class Main {
                     duracionEnvios = Integer.parseInt(arg.substring("--duracion-envios=".length()));
                 } else if (arg.startsWith("--rango-envios=")) {
                     String valor = arg.substring("--rango-envios=".length()).trim();
-                    if (valor.contains("-")) {
+                    if (valor.contains(":")) {
+                        String[] partes = valor.split(":");
+                        if (partes.length == 2) {
+                            fechaEnviosRangoInicio = LocalDate.parse(partes[0].trim());
+                            fechaEnviosRangoFin = LocalDate.parse(partes[1].trim());
+                            if (fechaEnviosRangoFin.isBefore(fechaEnviosRangoInicio)) {
+                                throw new IllegalArgumentException(
+                                    "fecha fin (" + fechaEnviosRangoFin + ") no puede ser anterior a fecha inicio (" + fechaEnviosRangoInicio + ")");
+                            }
+                            duracionEnvios = (int) java.time.temporal.ChronoUnit.DAYS.between(fechaEnviosRangoInicio, fechaEnviosRangoFin) + 1;
+                            fechaEnviosDia = 0;
+                            usarDiaMaximoEnvios = false;
+                            fechaEnviosFiltro = null;
+                        }
+                    } else if (valor.contains("-") && !valor.matches("\\d{4}-\\d{2}-\\d{2}.*")) {
                         String[] partes = valor.split("-");
                         if (partes.length == 2) {
                             int inicio = Integer.parseInt(partes[0]);
@@ -173,8 +197,6 @@ public class Main {
                     } else if (valor.contains(",")) {
                         String[] dias = valor.split(",");
                         fechaEnviosDia = Integer.parseInt(dias[0].trim());
-                        // For comma-separated values, we only use the first day for now
-                        // A more complete implementation would need changes to StandardExperimentPipeline
                         duracionEnvios = 1;
                         usarDiaMaximoEnvios = false;
                         fechaEnviosFiltro = null;
@@ -188,8 +210,9 @@ public class Main {
                 }
             }
 
-            boolean usarFechaEnvios = usarDiaMaximoEnvios || fechaEnviosFiltro != null || fechaEnviosDia > 0;
-            if (usarFechaEnvios && !diasVuelosEspecificado && diasVuelos == 0) {
+            boolean usarFechaEnvios = usarDiaMaximoEnvios || fechaEnviosFiltro != null
+                    || fechaEnviosDia > 0 || fechaEnviosRangoInicio != null;
+            if (usarFechaEnvios && !diasVuelosEspecificado) {
                 diasVuelos = calcularDiasVuelosAutomatico();
                 System.out.println("[INFO] Días de vuelos calculados automáticamente: " + diasVuelos
                         + " (basado en plazos: 24h mismo continente, 48h intercontinental + 24h buffer)");
@@ -205,6 +228,8 @@ public class Main {
                      usarDiaMaximoEnvios,
                      fechaEnviosDia,
                      duracionEnvios,
+                     fechaEnviosRangoInicio,
+                     fechaEnviosRangoFin,
                      semillaALNS,
                      semillaACO,
                      algoritmo
