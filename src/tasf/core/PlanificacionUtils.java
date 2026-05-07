@@ -181,7 +181,7 @@ public final class PlanificacionUtils {
         LocalDateTime limite = creacion.plus(getPlazoObjetivo(paquete, datos, config));
         double tardanzaMin = Math.max(0, Duration.between(limite, ruta.getLlegadaUtc()).toMinutes());
         // Penalización fuerte por tardanza: cada minuto tarde = 50 puntos
-        double costoTardanza = tardanzaMin * 50.0;
+        double costoTardanza = tardanzaMin * 500.0;
         double costoEscalas = ruta.getCantidadSaltos() * 500.0;
         double horasRuta = ruta.getHorasTotalesDesde(creacion);
         return costoTardanza + costoEscalas + horasRuta;
@@ -273,7 +273,7 @@ public final class PlanificacionUtils {
             final long t0 = System.nanoTime();
 
             // Buscar muchas más rutas que las necesarias: filtrar después por paquete
-            int rutasPorPar = Math.max(config.getMaxRutasPorPaquete() * 10, 200);
+            int rutasPorPar = Math.max(config.getMaxRutasPorPaquete() * 20, 500);
 
             List<String> paresLista = new ArrayList<>(paresPendientes);
             for (int i = 0; i < paresLista.size(); i++) {
@@ -333,19 +333,19 @@ public final class PlanificacionUtils {
             for (Ruta ruta : cacheadas) {
                 if (ruta.getSalidaUtc().isBefore(creacionUtc)) continue;
                 if (ruta.getSalidaUtc().isAfter(finVentana)) break;
-                if (ruta.getLlegadaUtc().isAfter(limiteEntrega)) continue; // Filtro por plazo de entrega
+if (ruta.getLlegadaUtc().isAfter(limiteEntrega)) continue; // Filtro por plazo de entrega
                 if (config.getFinSimulacionUtcExclusivo() != null
                         && estaFueraDeVentanaSimulacion(ruta, config)) continue;
                 filtradas.add(ruta);
                 if (filtradas.size() >= config.getMaxRutasPorPaquete()) break;
             }
 
-            // Si el filtrado dejo 0 rutas, usar cacheadas sin filtrar (fase 2 verificara)
+            // Si no hay rutas dentro del deadline, NO usar rutas tardías
             if (filtradas.isEmpty()) {
-                candidatos.put(paquete.getId(), cacheadas);
-            } else {
-                candidatos.put(paquete.getId(), filtradas);
+                candidatos.put(paquete.getId(), List.of());
+                continue;
             }
+            candidatos.put(paquete.getId(), filtradas);
         }
 
         return candidatos;

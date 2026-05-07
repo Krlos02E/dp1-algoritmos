@@ -116,6 +116,12 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         // Segundo paso: intentar remover y reasignar para liberar espacio
         propuestaMejor = repararRemoviendo(propuestaMejor, datos, config, candidatos);
 
+        // Paso 3: forzar rutas a tiempo si existen alternativas
+        propuestaMejor = forzarATiempo(propuestaMejor, datos, config, candidatos);
+
+        // Paso 4: ELIMINAR rutas fuera del deadline - STRICTO
+        propuestaMejor = eliminarRutasFueraDePlazo(propuestaMejor, datos, config);
+
         Solucion salida = PlanificacionUtils.evaluarAsignacion("ALNS", propuestaMejor, datos, config);
         salida.setMetrica("pesoRupturaRandom", pesosRuptura[RUPTURA_RANDOM]);
         salida.setMetrica("pesoRupturaWorstDelay", pesosRuptura[RUPTURA_WORST_DELAY]);
@@ -134,30 +140,44 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         EstadoOperacional estado = new EstadoOperacional();
         List<Paquete> paquetes = new ArrayList<>(datos.getPaquetes());
         paquetes.sort((a, b) -> {
-            int na = candidatos.getOrDefault(a.getId(), List.of()).size();
-            int nb = candidatos.getOrDefault(b.getId(), List.of()).size();
-            if (na != nb) return Integer.compare(na, nb);
-            return PlanificacionUtils.getCreacionUtc(a, datos, config)
-                    .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
+            // PRIORIZAR por deadline más cercano (más urgente)
+            LocalDateTime deadlineA = PlanificacionUtils.getCreacionUtc(a, datos, config)
+                    .plus(PlanificacionUtils.getPlazoObjetivo(a, datos, config));
+            LocalDateTime deadlineB = PlanificacionUtils.getCreacionUtc(b, datos, config)
+                    .plus(PlanificacionUtils.getPlazoObjetivo(b, datos, config));
+            return deadlineA.compareTo(deadlineB);
         });
 
         for (Paquete p : paquetes) {
             List<Ruta> rutas = candidatos.getOrDefault(p.getId(), List.of());
             if (rutas.isEmpty()) continue;
             LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
+            LocalDateTime deadline = creacion.plus(plazo);
 
+            // FILTRAR: solo rutas dentro del deadline
+            List<Ruta> rutasValidas = new ArrayList<>();
+            for (Ruta r : rutas) {
+                if (!r.getLlegadaUtc().isAfter(deadline)) {
+                    rutasValidas.add(r);
+                }
+            }
+
+            if (rutasValidas.isEmpty()) continue;
+
+            // PRIMERO: intentar asignar rutas DENTRO del deadline
             Ruta mejor = null;
             double mejorScore = Double.POSITIVE_INFINITY;
-            for (Ruta r : rutas) {
+            for (Ruta r : rutasValidas) {
                 EstadoOperacional prueba = estado.copia();
                 if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
                 double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
                 if (score < mejorScore) { mejorScore = score; mejor = r; }
             }
-            if (mejor != null) {
-                estado.reservarRutaSiFactible(p, mejor, creacion, datos, config);
-                propuesta.put(p.getId(), mejor);
-            }
+            // Si no hay ruta dentro del deadline, NO asignar nada (esperar a reparación)
+            if (mejor == null) continue;
+            estado.reservarRutaSiFactible(p, mejor, creacion, datos, config);
+            propuesta.put(p.getId(), mejor);
         }
         return propuesta;
     }
@@ -313,10 +333,23 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             Paquete p = datos.getPaquetePorId(id);
             if (p == null) continue;
             LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
+            LocalDateTime deadline = creacion.plus(plazo);
             List<Ruta> rutas = candidatos.getOrDefault(id, List.of());
+
+            // FILTRAR: solo rutas dentro del deadline
+            List<Ruta> rutasValidas = new ArrayList<>();
+            for (Ruta r : rutas) {
+                if (!r.getLlegadaUtc().isAfter(deadline)) {
+                    rutasValidas.add(r);
+                }
+            }
+
+            if (rutasValidas.isEmpty()) continue;
+
             Ruta mejor = null;
             double mejorScore = Double.POSITIVE_INFINITY;
-            for (Ruta r : rutas) {
+            for (Ruta r : rutasValidas) {
                 EstadoOperacional prueba = estado.copia();
                 if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
                 double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
@@ -342,9 +375,22 @@ public class ALNS_Strategy implements PlanificadorStrategy {
                 Paquete p = datos.getPaquetePorId(id);
                 if (p == null) continue;
                 LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+                Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
+                LocalDateTime deadline = creacion.plus(plazo);
                 List<Ruta> rutas = candidatos.getOrDefault(id, List.of());
+
+// FILTRAR: solo rutas dentro del deadline
+            List<Ruta> rutasValidas = new ArrayList<>();
+            for (Ruta r : rutas) {
+                if (!r.getLlegadaUtc().isAfter(deadline)) {
+                    rutasValidas.add(r);
+                }
+            }
+
+                if (rutasValidas.isEmpty()) continue;
+
                 double best = Double.POSITIVE_INFINITY, second = Double.POSITIVE_INFINITY;
-                for (Ruta r : rutas) {
+                for (Ruta r : rutasValidas) {
                     EstadoOperacional prueba = estado.copia();
                     if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
                     double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
@@ -360,10 +406,23 @@ public class ALNS_Strategy implements PlanificadorStrategy {
 
             Paquete p = datos.getPaquetePorId(mejorId);
             LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
+            LocalDateTime deadline = creacion.plus(plazo);
             List<Ruta> rutas = candidatos.getOrDefault(mejorId, List.of());
-            double mejorScore = Double.POSITIVE_INFINITY;
-            Ruta mejor = null;
+
+            // FILTRAR: STRICTO solo rutas dentro del deadline
+            List<Ruta> rutasValidas = new ArrayList<>();
             for (Ruta r : rutas) {
+                if (!r.getLlegadaUtc().isAfter(deadline)) {
+                    rutasValidas.add(r);
+                }
+            }
+
+            if (rutasValidas.isEmpty()) continue;
+
+            Ruta mejor = null;
+            double mejorScore = Double.POSITIVE_INFINITY;
+            for (Ruta r : rutasValidas) {
                 EstadoOperacional prueba = estado.copia();
                 if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
                 double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
@@ -382,13 +441,24 @@ public class ALNS_Strategy implements PlanificadorStrategy {
     // =====================================================================
 
     private Map<String, Ruta> construirReverso(Dataset datos, Config_Simulacion config, Map<String, List<Ruta>> candidatos) {
-        // Paso 1: Asignar la mejor ruta a cada paquete sin verificar capacidad
         Map<String, Ruta> propuesta = new HashMap<>();
         for (Paquete p : datos.getPaquetes()) {
             List<Ruta> rutas = candidatos.getOrDefault(p.getId(), List.of());
             if (rutas.isEmpty()) continue;
-            // Elegir ruta con menos escalas (menor consumo de capacidad aeroportuaria)
-            Ruta mejor = rutas.stream()
+            LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            LocalDateTime deadline = creacion.plus(PlanificacionUtils.getPlazoObjetivo(p, datos, config));
+
+            // FILTRAR: solo rutas dentro del deadline
+            List<Ruta> rutasValidas = new ArrayList<>();
+            for (Ruta r : rutas) {
+                if (!r.getLlegadaUtc().isAfter(deadline)) {
+                    rutasValidas.add(r);
+                }
+            }
+            if (rutasValidas.isEmpty()) continue;
+
+            // Elegir ruta con menos escalas
+            Ruta mejor = rutasValidas.stream()
                     .min(Comparator.comparingInt(Ruta::getCantidadSaltos)
                             .thenComparing(Ruta::getLlegadaUtc))
                     .orElse(null);
@@ -456,12 +526,22 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             if (propuesta.containsKey(pendiente.getId())) continue;
 
             LocalDateTime creacionP = PlanificacionUtils.getCreacionUtc(pendiente, datos, config);
+            LocalDateTime deadlineP = creacionP.plus(PlanificacionUtils.getPlazoObjetivo(pendiente, datos, config));
             List<Ruta> rutasP = candidatos.getOrDefault(pendiente.getId(), List.of());
+
+            // FILTRAR: solo rutas dentro del deadline
+            List<Ruta> rutasValidasP = new ArrayList<>();
+            for (Ruta r : rutasP) {
+                if (!r.getLlegadaUtc().isAfter(deadlineP)) {
+                    rutasValidasP.add(r);
+                }
+            }
+            if (rutasValidasP.isEmpty()) continue;
 
             // Intento directo
             boolean encontrado = false;
             EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
-            for (Ruta r : rutasP) {
+            for (Ruta r : rutasValidasP) {
                 EstadoOperacional prueba = estado.copia();
                 if (prueba.reservarRutaSiFactible(pendiente, r, creacionP, datos, config)) {
                     estado.reservarRutaSiFactible(pendiente, r, creacionP, datos, config);
@@ -610,15 +690,26 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         int bloqueadoVuelo = 0;
         int bloqueadoAeropuerto = 0;
 
-        for (Paquete p : sinRuta) {
+for (Paquete p : sinRuta) {
             LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
+            LocalDateTime deadline = creacion.plus(plazo);
             List<Ruta> rutas = candidatos.getOrDefault(p.getId(), List.of());
-            if (rutas.isEmpty()) continue;
+
+            // FILTRAR: solo rutas dentro del deadline
+            List<Ruta> rutasValidas = new ArrayList<>();
+            for (Ruta r : rutas) {
+                if (!r.getLlegadaUtc().isAfter(deadline)) {
+                    rutasValidas.add(r);
+                }
+            }
+
+            if (rutasValidas.isEmpty()) continue;
             conCandidatos++;
 
             Ruta mejor = null;
             double mejorScore = Double.POSITIVE_INFINITY;
-            for (Ruta r : rutas) {
+            for (Ruta r : rutasValidas) {
                 EstadoOperacional prueba = estado.copia();
                 if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) {
                     boolean fallaVuelo = false;
@@ -688,5 +779,98 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             puntajes[i] = 0.0;
             usos[i] = 0;
         }
+    }
+
+    // =====================================================================
+    // FORZAR RUTAS A TIEMPO
+    // =====================================================================
+
+    private Map<String, Ruta> forzarATiempo(
+            Map<String, Ruta> propuesta,
+            Dataset datos,
+            Config_Simulacion config,
+            Map<String, List<Ruta>> candidatos
+    ) {
+        EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
+        int mejorados = 0;
+
+        // PRIORIZAR paquetes por deadline más cercano
+        List<Paquete> paquetesConProblema = new ArrayList<>();
+        for (Paquete p : datos.getPaquetes()) {
+            Ruta r = propuesta.get(p.getId());
+            if (r == null) continue;
+            LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            LocalDateTime deadline = creacion.plus(PlanificacionUtils.getPlazoObjetivo(p, datos, config));
+            if (r.getLlegadaUtc().isAfter(deadline)) {
+                paquetesConProblema.add(p);
+            }
+        }
+        paquetesConProblema.sort((a, b) -> {
+            LocalDateTime deadlineA = PlanificacionUtils.getCreacionUtc(a, datos, config)
+                    .plus(PlanificacionUtils.getPlazoObjetivo(a, datos, config));
+            LocalDateTime deadlineB = PlanificacionUtils.getCreacionUtc(b, datos, config)
+                    .plus(PlanificacionUtils.getPlazoObjetivo(b, datos, config));
+            return deadlineA.compareTo(deadlineB);
+        });
+
+        for (Paquete p : paquetesConProblema) {
+            Ruta r = propuesta.get(p.getId());
+            if (r == null) continue;
+
+            LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            LocalDateTime deadline = creacion.plus(PlanificacionUtils.getPlazoObjetivo(p, datos, config));
+
+            if (!r.getLlegadaUtc().isAfter(deadline)) continue;
+
+            List<Ruta> alternativas = candidatos.getOrDefault(p.getId(), List.of());
+            for (Ruta alt : alternativas) {
+                if (alt.getLlegadaUtc().isAfter(deadline)) continue;
+                EstadoOperacional prueba = estado.copia();
+                if (prueba.reservarRutaSiFactible(p, alt, creacion, datos, config)) {
+                    estado.reservarRutaSiFactible(p, alt, creacion, datos, config);
+                    propuesta.put(p.getId(), alt);
+                    mejorados++;
+                    break;
+                }
+            }
+        }
+
+        if (mejorados > 0) {
+            System.out.println("  [ALNS] forzarATiempo: " + mejorados + " paquetes reasignados");
+        }
+        return propuesta;
+    }
+
+    // =====================================================================
+    // ELIMINAR RUTAS FUERA DEL DEADLINE - FILTRO FINAL ESTRICTO
+    // =====================================================================
+
+    private Map<String, Ruta> eliminarRutasFueraDePlazo(
+            Map<String, Ruta> propuesta,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        int eliminados = 0;
+        Map<String, Ruta> resultado = new HashMap<>();
+
+        for (Paquete p : datos.getPaquetes()) {
+            Ruta r = propuesta.get(p.getId());
+            if (r == null) continue;
+
+            LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            LocalDateTime deadline = creacion.plus(PlanificacionUtils.getPlazoObjetivo(p, datos, config));
+
+            // STRICTO: solo mantener rutas que lleguen ANTES del deadline
+            if (!r.getLlegadaUtc().isAfter(deadline)) {
+                resultado.put(p.getId(), r);
+            } else {
+                eliminados++;
+            }
+        }
+
+        if (eliminados > 0) {
+            System.out.println("  [ALNS] eliminarFueraPlazo: " + eliminados + " rutas eliminadas por llegar tarde");
+        }
+        return resultado;
     }
 }

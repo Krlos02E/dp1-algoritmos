@@ -37,8 +37,20 @@ public class RouteFinder {
 
         List<LocalDateTime> inicios = new ArrayList<>();
         inicios.add(disponibleDesdeUtc);
+        // Iniciar búsquedas más cercanas al deadline para encontrar rutas rápidas
+        Duration plazoMaximo = Duration.ofHours(48); // Asumir max 48h
         for (int i = 1; i <= 5; i++) {
-            inicios.add(disponibleDesdeUtc.plusHours(i * 24));
+            LocalDateTime tryInicio = disponibleDesdeUtc.plusHours(i * 6); // Cada 6 horas
+            if (!tryInicio.isAfter(disponibleDesdeUtc.plus(plazoMaximo))) {
+                inicios.add(tryInicio);
+            }
+        }
+        //También buscar desde 1h, 2h, 3h después (buscar rutas tempranas)
+        for (int i = 1; i <= 3; i++) {
+            LocalDateTime tryInicio = disponibleDesdeUtc.plusHours(i);
+            if (!tryInicio.isAfter(disponibleDesdeUtc.plus(plazoMaximo))) {
+                inicios.add(tryInicio);
+            }
         }
 
         long deadline = System.nanoTime() + TIMEOUT_NS;
@@ -61,9 +73,9 @@ public class RouteFinder {
             );
         }
 
-        rutas.sort(Comparator.comparingInt((Ruta r) -> r.getCantidadSaltos() - 1)
-                .thenComparingDouble((Ruta r) -> calcularEsperaTotal(r, disponibleDesdeUtc))
-                .thenComparing(Ruta::getLlegadaUtc));
+        rutas.sort(Comparator.comparing(Ruta::getLlegadaUtc)
+                .thenComparingInt((Ruta r) -> r.getCantidadSaltos() - 1)
+                .thenComparingDouble((Ruta r) -> calcularEsperaTotal(r, disponibleDesdeUtc)));
         
         List<Ruta> filtradas = new ArrayList<>();
         Set<String> firmasUsadas = new HashSet<>();

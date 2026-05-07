@@ -123,24 +123,15 @@ public class ACO_Strategy implements PlanificadorStrategy {
                 solucionesIter.add(new SolucionHormiga(propuestaHormiga, solHormiga));
             }
 
-            evaporarFeromonas(feromonas, config.getEvaporacionFeromona());
             if (solucionesIter.isEmpty()) {
                 sinMejora++;
                 continue;
             }
-
-            solucionesIter.sort(Comparator.comparingDouble(s -> s.solucion().getCostoTotal()));
-            SolucionHormiga mejorIter = solucionesIter.get(0);
-            if (mejorIter.solucion().getCostoTotal() < mejorGlobal.getCostoTotal()) {
-                mejorGlobal = mejorIter.solucion();
-                mejorGlobalPropuesta = new HashMap<>(mejorIter.propuesta());
-                sinMejora = 0;
-                levySigma = 1.0; // reset dispersión cuando hay mejora
-            } else {
+if (solucionesIter.isEmpty()) {
                 sinMejora++;
-                // Aumentar dispersión de Lévy gradualmente para escapar óptimos locales
-                levySigma = Math.min(5.0, 1.0 + sinMejora * 0.3);
+                continue;
             }
+            evaporarFeromonas(feromonas, config.getEvaporacionFeromona());
 
             // Reinicio controlado si estancamiento prolongado
             if (sinMejora >= umbralReinicio && reinicios < MAX_REINICIOS) {
@@ -568,8 +559,7 @@ public class ACO_Strategy implements PlanificadorStrategy {
             double q,
             double factor
     ) {
-        // Depósito elitista: refuerza la mejor iteración y con más peso al mejor histórico.
-        double deposito = (q * Math.max(0.1, factor)) / Math.max(1.0, solucion.getCostoTotal());
+        double deposito = (q * Math.max(0.1, factor) * 1000.0) / Math.max(1.0, solucion.getCostoTotal());
 
         for (Ruta ruta : propuesta.values()) {
             for (Tramo tramo : ruta.getTramos()) {

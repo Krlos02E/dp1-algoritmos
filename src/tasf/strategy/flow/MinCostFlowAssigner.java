@@ -39,8 +39,6 @@ public class MinCostFlowAssigner {
         Map<String, Ruta> asignaciones = new HashMap<>();
         EstadoOperacional estado = new EstadoOperacional();
 
-        // Ordenar paquetes: primero los con MENOS rutas candidatas (más restringidos)
-        // y luego por creación (para evitar que paquetes flexibles saturen el sistema)
         Map<String, List<Ruta>> candidatos = construirCandidatosRutas(datos, config);
         List<Paquete> paquetesOrdenados = new ArrayList<>(datos.getPaquetes());
         paquetesOrdenados.sort((a, b) -> {
@@ -53,8 +51,8 @@ public class MinCostFlowAssigner {
 
         int intentos = 0;
         int exitos = 0;
+        int alternativosExitosos = 0;
 
-        // Aceptar cada ruta seleccionada si sigue siendo factible con la carga acumulada.
         for (Paquete paquete : paquetesOrdenados) {
             Ruta rutaSeleccionada = rutasPlanificadas.get(paquete.getId());
             if (rutaSeleccionada == null) {
@@ -67,9 +65,98 @@ public class MinCostFlowAssigner {
             if (factible) {
                 asignaciones.put(paquete.getId(), rutaSeleccionada);
                 exitos++;
+            } else {
+                Ruta rutaAlternativa = buscarRutaAlternativa(paquete, candidatos, estado, creacionUtc, datos, config);
+                if (rutaAlternativa != null) {
+                    estado.reservarRutaSiFactible(paquete, rutaAlternativa, creacionUtc, datos, config);
+                    asignaciones.put(paquete.getId(), rutaAlternativa);
+                    alternativosExitosos++;
+                    exitos++;
+                }
             }
         }
-        
+
+        asignaciones = intentarAsignarNoAsignados(asignaciones, candidatos, estado, datos, config);
+        return asignaciones;
+    }
+
+    private Ruta buscarRutaAlternativa(
+            Paquete paquete,
+            Map<String, List<Ruta>> candidatos,
+            EstadoOperacional estado,
+            LocalDateTime creacionUtc,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        List<Ruta> rutasCandidatas = candidatos.getOrDefault(paquete.getId(), List.of());
+        if (rutasCandidatas.isEmpty()) return null;
+
+        List<Ruta> rutasEnPlazo = new ArrayList<>();
+        List<Ruta> rutasFueraPlazo = new ArrayList<>();
+
+        for (Ruta ruta : rutasCandidatas) {
+            boolean fueraDePlazo = PlanificacionUtils.estaFueraDePlazo(paquete, ruta, datos, config);
+            if (fueraDePlazo) {
+                rutasFueraPlazo.add(ruta);
+            } else {
+                rutasEnPlazo.add(ruta);
+            }
+        }
+
+        List<Ruta> rutasAPriorizar = rutasEnPlazo.isEmpty() ? rutasFueraPlazo : rutasEnPlazo;
+
+        Ruta mejorRuta = null;
+        double mejorScore = Double.POSITIVE_INFINITY;
+
+        for (Ruta ruta : rutasAPriorizar) {
+            EstadoOperacional prueba = estado.copia();
+            if (prueba.reservarRutaSiFactible(paquete, ruta, creacionUtc, datos, config)) {
+                double score = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, estado, datos, config);
+                if (score < mejorScore) {
+                    mejorScore = score;
+                    mejorRuta = ruta;
+                }
+            }
+        }
+
+        return mejorRuta;
+    }
+
+    private Map<String, Ruta> intentarAsignarNoAsignados(
+            Map<String, Ruta> asignaciones,
+            Map<String, List<Ruta>> candidatos,
+            EstadoOperacional estado,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        List<Paquete> sinAsignar = new ArrayList<>();
+        for (Paquete p : datos.getPaquetes()) {
+            if (!asignaciones.containsKey(p.getId()) && !candidatos.getOrDefault(p.getId(), List.of()).isEmpty()) {
+                sinAsignar.add(p);
+            }
+        }
+
+        if (sinAsignar.isEmpty()) return asignaciones;
+
+        sinAsignar.sort((a, b) -> {
+            int na = candidatos.getOrDefault(a.getId(), List.of()).size();
+            int nb = candidatos.getOrDefault(b.getId(), List.of()).size();
+            if (na != nb) return Integer.compare(na, nb);
+            return PlanificacionUtils.getCreacionUtc(a, datos, config)
+                    .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
+        });
+
+        int reasignados = 0;
+        for (Paquete paquete : sinAsignar) {
+            LocalDateTime creacionUtc = PlanificacionUtils.getCreacionUtc(paquete, datos, config);
+            Ruta ruta = buscarRutaAlternativa(paquete, candidatos, estado, creacionUtc, datos, config);
+            if (ruta != null) {
+                estado.reservarRutaSiFactible(paquete, ruta, creacionUtc, datos, config);
+                asignaciones.put(paquete.getId(), ruta);
+                reasignados++;
+            }
+        }
+
         return asignaciones;
     }
 

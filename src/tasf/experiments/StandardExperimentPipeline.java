@@ -62,11 +62,13 @@ public final class StandardExperimentPipeline {
     private final int corridasPorAlgoritmo;
     private final LocalDate fechaEnviosFiltro;
     private final boolean usarDiaMaximoEnvios;
+    private final int fechaEnviosDia;
     private final boolean barrerPorcentajeEnvios;
     private final int porcentajeEnviosInicial;
     private final int porcentajeEnviosMinimo;
     private final int pasoPorcentajeEnvios;
     private final List<AlgorithmSpec> algoritmos;
+    private final boolean ejecucionRapida;
 
     public StandardExperimentPipeline(
             Path dataDir,
@@ -76,11 +78,13 @@ public final class StandardExperimentPipeline {
             int corridasPorAlgoritmo,
             LocalDate fechaEnviosFiltro,
             boolean usarDiaMaximoEnvios,
+            int fechaEnviosDia,
             boolean barrerPorcentajeEnvios,
             int porcentajeEnviosInicial,
             int porcentajeEnviosMinimo,
             int pasoPorcentajeEnvios,
-            List<AlgorithmSpec> algoritmos
+            List<AlgorithmSpec> algoritmos,
+            boolean ejecucionRapida
     ) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir no puede ser null");
         this.fechaInicioVuelos = Objects.requireNonNull(fechaInicioVuelos, "fechaInicioVuelos no puede ser null");
@@ -89,10 +93,12 @@ public final class StandardExperimentPipeline {
         this.corridasPorAlgoritmo = Math.max(1, corridasPorAlgoritmo);
         this.fechaEnviosFiltro = fechaEnviosFiltro;
         this.usarDiaMaximoEnvios = usarDiaMaximoEnvios;
+        this.fechaEnviosDia = fechaEnviosDia;
         this.barrerPorcentajeEnvios = barrerPorcentajeEnvios;
         this.porcentajeEnviosInicial = porcentajeEnviosInicial;
         this.porcentajeEnviosMinimo = porcentajeEnviosMinimo;
         this.pasoPorcentajeEnvios = pasoPorcentajeEnvios;
+        this.ejecucionRapida = ejecucionRapida;
         if (algoritmos == null || algoritmos.isEmpty()) {
             throw new IllegalArgumentException("Debe haber al menos un algoritmo");
         }
@@ -108,6 +114,7 @@ public final class StandardExperimentPipeline {
                 corridasPorAlgoritmo,
                 null,
                 false,
+                0, // fechaEnviosDia
                 false,
                 100,
                 10,
@@ -115,7 +122,8 @@ public final class StandardExperimentPipeline {
                 List.of(
                         new AlgorithmSpec("ALNS", () -> new ALNS_RutasPlanner(17L)),
                         new AlgorithmSpec("ACO", () -> new ACO_RutasPlanner(17L))
-                )
+                ),
+                false
         );
     }
 
@@ -149,6 +157,16 @@ public final class StandardExperimentPipeline {
                 conteoPorDia.size(),
                 conteoPorDia.values().stream().mapToInt(Integer::intValue).sum(),
                 msScan));
+        System.out.println("[DEBUG] Primeros 10 días por conteo:");
+        conteoPorDia.entrySet().stream()
+                .sorted((e1, e2) -> Integer.compare(e2.getValue(), e1.getValue()))
+                .limit(10)
+                .forEach(e -> System.out.println("       " + e.getKey() + " = " + e.getValue() + " paquetes"));
+        System.out.println("[DEBUG] Primeros 10 días por fecha UTC:");
+        conteoPorDia.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .limit(10)
+                .forEach(e -> System.out.println("       " + e.getKey() + " = " + e.getValue() + " paquetes"));
 
         // Paso 2: Determinar qué fecha(s) se necesitan
         Set<LocalDate> fechasNecesarias = new HashSet<>();
@@ -157,12 +175,22 @@ public final class StandardExperimentPipeline {
         List<Integer> nivelesObjetivo;
         LocalDate fechaReferencia = null;
 
-        if (usarDiaMaximoEnvios || fechaEnviosFiltro != null || barrerPorcentajeEnvios) {
+        if (usarDiaMaximoEnvios || fechaEnviosFiltro != null || barrerPorcentajeEnvios || fechaEnviosDia > 0) {
             if (usarDiaMaximoEnvios || (barrerPorcentajeEnvios && fechaEnviosFiltro == null)) {
                 fechaReferencia = conteoPorDia.entrySet().stream()
                         .max(Map.Entry.comparingByValue())
                         .map(Map.Entry::getKey)
                         .orElseThrow(() -> new IllegalStateException("No hay días con envíos"));
+            } else if (fechaEnviosDia > 0) {
+                List<LocalDate> diasOrdenados = conteoPorDia.keySet().stream()
+                        .sorted()
+                        .toList();
+                if (fechaEnviosDia <= diasOrdenados.size()) {
+                    fechaReferencia = diasOrdenados.get(fechaEnviosDia - 1);
+                } else {
+                    throw new IllegalArgumentException(
+                            "Día de envíos solicitado (" + fechaEnviosDia + ") fuera de rango. Días disponibles: " + diasOrdenados.size());
+                }
             } else {
                 fechaReferencia = fechaEnviosFiltro;
                 if (!conteoPorDia.containsKey(fechaReferencia)) {
@@ -220,14 +248,13 @@ public final class StandardExperimentPipeline {
             long diasRequeridos = diasDesdeInicio + buffer + 1;
 
             if (diasRequeridos <= diasVuelos) {
-                // La ventana cabe: usar desde fechaInicioVuelos hasta maxFecha+buffer
                 fechaInicioEfectiva = fechaInicioVuelos;
                 diasVuelosEfectivos = (int) diasRequeridos;
             } else {
-                // No cabe todo: usar los diasVuelos completos terminando en maxFecha+buffer
-                ventanaFin = maxFecha.plusDays(buffer);
-                fechaInicioEfectiva = ventanaFin.minusDays(diasVuelos - 1);
-                diasVuelosEfectivos = diasVuelos;
+                // Always use required size - do NOT shrink to diasVuelos
+                // This ensures we have flights covering package creation dates + buffer
+                fechaInicioEfectiva = fechaInicioVuelos;
+                diasVuelosEfectivos = (int) diasRequeridos;
             }
             ventanaFin = fechaInicioEfectiva.plusDays(diasVuelosEfectivos - 1);
         }
@@ -312,6 +339,11 @@ public final class StandardExperimentPipeline {
                     double porcentajeExito = totalEnvios == 0 ? 0.0 : (100.0 * asignados) / totalEnvios;
                         boolean cumplePlazo = noAsignados == 0 && maletasFueraDePlazo == 0;
                         cumpleTodo = cumpleTodo && cumplePlazo;
+
+                        if (maletasFueraDePlazo > 0) {
+                            System.out.println("  [DIAG] FUERA DE PLAZO detected: " + maletasFueraDePlazo + " maletas");
+                            diagnosticarPaquetes(datasetDia, solucion, config);
+                        }
 
                     rawRecords.add(new RunRecord(
                             algoritmo.name,
@@ -487,9 +519,26 @@ public final class StandardExperimentPipeline {
         config.setPlazoMismoContinente(Duration.ofHours(24));
         config.setPlazoIntercontinental(Duration.ofHours(48));
         config.setMinimaConexion(Duration.ofMinutes(30));
+
+        if (ejecucionRapida) {
+            System.out.println("[INFO] Modo ejecución rápida activado");
+            config.setIteracionesALNS(20);
+            config.setIteracionesACO(10);
+            config.setHormigasACO(4);
+            config.setMaxRutasPorPaquete(4);
+            config.setTopRutasACO(2);
+            config.setHormigasEliteACO(1);
+            config.setHorizonteBusqueda(Duration.ofHours(48));
+            config.setMaxEscalas(2);
+            config.setVentanaActualizacionPesos(5);
+            config.setEvaporacionFeromona(0.4);
+        }
+
         int diasDisponibles = diasVuelos > 0 ? diasVuelos : 1095;
         long horasMaximas = Math.min(240L, diasDisponibles * 24L);
-        config.setHorizonteBusqueda(Duration.ofHours(horasMaximas));
+        if (!ejecucionRapida) {
+            config.setHorizonteBusqueda(Duration.ofHours(horasMaximas));
+        }
         int maxEscalas = diasDisponibles <= 3 ? 2 : 3;
         config.setMaxEscalas(maxEscalas);
 

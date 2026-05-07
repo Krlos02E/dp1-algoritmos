@@ -13,7 +13,7 @@ public class Config_Simulacion {
     private int iteracionesACO = 50;
     private int hormigasACO = 12;
     private int maxEscalas = 3;
-    private int maxRutasPorPaquete = 8;
+    private int maxRutasPorPaquete = 50;
     private double porcentajeRuptura = 0.25;
     private int ventanaActualizacionPesos = 20;
     private double tasaAprendizajePesos = 0.35;
