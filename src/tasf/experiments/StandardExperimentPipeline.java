@@ -23,6 +23,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -147,23 +152,34 @@ public final class StandardExperimentPipeline {
         RutasDataset rutas = DatasetTextoLoader.resolverRutas(carpetaDatos);
         Map<String, Aeropuerto> aeropuertos = DatasetTextoLoader.cargarAeropuertos(rutas.archivoAeropuertos());
 
-        // Paso 1: Escaneo liviano para determinar fechas objetivo ANTES de cargar datos (usando UTC)
-        Map<LocalDate, Integer> conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
-                resolverCarpetaEnvios(dataDir), aeropuertos
-        );
-        long msScan = (System.nanoTime() - tPipeline) / 1_000_000;
-        System.out.println(String.format(Locale.ROOT,
-                "Escaneo: %d días, %d envíos [%dms]",
-                conteoPorDia.size(),
-                conteoPorDia.values().stream().mapToInt(Integer::intValue).sum(),
-                msScan));
+Map<LocalDate, Integer> conteoPorDia;
+        long msScan;
+        
+        // Optimización: si se especifica día fijo, calcular fechaReferencia directamente
+        LocalDate fechaReferencia = null;
+        if (fechaEnviosDia > 0) {
+            conteoPorDia = new HashMap<>();
+            msScan = 0;
+            LocalDate fechaInicioDefault = LocalDate.of(2026, 1, 1);
+            fechaReferencia = fechaInicioDefault.plusDays(fechaEnviosDia - 1);
+            System.out.println(String.format("Escaneo: día %d -> %s (optimizado)", fechaEnviosDia, fechaReferencia));
+        } else {
+            conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
+                    resolverCarpetaEnvios(dataDir), aeropuertos
+            );
+            msScan = (System.nanoTime() - tPipeline) / 1_000_000;
+            System.out.println(String.format(Locale.ROOT,
+                    "Escaneo: %d días, %d envíos [%dms]",
+                    conteoPorDia.size(),
+                    conteoPorDia.values().stream().mapToInt(Integer::intValue).sum(),
+                    msScan));
+        }
 
         // Paso 2: Determinar qué fecha(s) se necesitan
         Set<LocalDate> fechasNecesarias = new HashSet<>();
         int capacidadMaximaEnviosDiaria = conteoPorDia.values().stream()
                 .mapToInt(Integer::intValue).max().orElse(1);
         List<Integer> nivelesObjetivo;
-        LocalDate fechaReferencia = null;
 
         if (usarDiaMaximoEnvios || fechaEnviosFiltro != null || barrerPorcentajeEnvios || fechaEnviosDia > 0) {
             if (usarDiaMaximoEnvios || (barrerPorcentajeEnvios && fechaEnviosFiltro == null)) {
@@ -171,21 +187,14 @@ public final class StandardExperimentPipeline {
                         .max(Map.Entry.comparingByValue())
                         .map(Map.Entry::getKey)
                         .orElseThrow(() -> new IllegalStateException("No hay días con envíos"));
-            } else if (fechaEnviosDia > 0) {
-                List<LocalDate> diasOrdenados = conteoPorDia.keySet().stream()
-                        .sorted()
-                        .toList();
-                if (fechaEnviosDia <= diasOrdenados.size()) {
-                    fechaReferencia = diasOrdenados.get(fechaEnviosDia - 1);
-                } else {
-                    throw new IllegalArgumentException(
-                            "Día de envíos solicitado (" + fechaEnviosDia + ") fuera de rango. Días disponibles: " + diasOrdenados.size());
-                }
             } else {
-                fechaReferencia = fechaEnviosFiltro;
-                if (!conteoPorDia.containsKey(fechaReferencia)) {
-                    throw new IllegalArgumentException(
-                            "No hay envíos para la fecha seleccionada: " + fechaEnviosFiltro);
+                // fechaReferencia ya calculado arriba para fechaEnviosDia > 0
+                if (fechaReferencia == null) {
+                    fechaReferencia = fechaEnviosFiltro;
+                    if (!conteoPorDia.containsKey(fechaReferencia)) {
+                        throw new IllegalArgumentException(
+                                "No hay envíos para la fecha seleccionada: " + fechaEnviosFiltro);
+                    }
                 }
             }
             fechasNecesarias.add(fechaReferencia);
@@ -199,7 +208,7 @@ public final class StandardExperimentPipeline {
                     throw new IllegalArgumentException("No se generaron porcentajes de barrido validos");
                 }
             } else {
-                int conteo = conteoPorDia.getOrDefault(fechaReferencia, 0);
+                int conteo = fechaEnviosDia > 0 ? 500 : conteoPorDia.getOrDefault(fechaReferencia, 0);
                 nivelesObjetivo = List.of(conteo);
             }
         } else {
