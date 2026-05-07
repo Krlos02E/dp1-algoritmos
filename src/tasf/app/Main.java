@@ -20,15 +20,12 @@ public class Main {
         try {
             List<StandardExperimentPipeline.AlgorithmSpec> algoritmos = new ArrayList<>();
 
-            if (parametros.algoritmo == null || parametros.algoritmo.equalsIgnoreCase("ambos")) {
-                algoritmos.add(new StandardExperimentPipeline.AlgorithmSpec("ALNS", () -> new tasf.strategy.alns.ALNS_RutasPlanner(parametros.semillaALNS)));
-                algoritmos.add(new StandardExperimentPipeline.AlgorithmSpec("ACO", () -> new tasf.strategy.aco.ACO_RutasPlanner(parametros.semillaACO)));
-            } else if (parametros.algoritmo.equalsIgnoreCase("ALNS")) {
+            if (parametros.algoritmo.equalsIgnoreCase("ALNS")) {
                 algoritmos.add(new StandardExperimentPipeline.AlgorithmSpec("ALNS", () -> new tasf.strategy.alns.ALNS_RutasPlanner(parametros.semillaALNS)));
             } else if (parametros.algoritmo.equalsIgnoreCase("ACO")) {
                 algoritmos.add(new StandardExperimentPipeline.AlgorithmSpec("ACO", () -> new tasf.strategy.aco.ACO_RutasPlanner(parametros.semillaACO)));
             } else {
-                System.err.println("Algoritmo no válido: " + parametros.algoritmo + ". Use ALNS, ACO, o ambos.");
+                System.err.println("Algoritmo no válido: " + parametros.algoritmo + ". Use ALNS o ACO.");
                 System.exit(1);
             }
 
@@ -117,20 +114,16 @@ public class Main {
         private static ParametrosCli desdeArgs(String[] args) {
             Path dataDir = Path.of("data").toAbsolutePath().normalize();
             LocalDate fechaInicioVuelos = LocalDate.of(2026, 1, 2);
-            int diasVuelos = 0;
+            int diasVuelos = 3;
             int maxEnviosPorArchivo = 0;
             int corridasPorAlgoritmo = 1;
             LocalDate fechaEnviosFiltro = null;
             boolean usarDiaMaximoEnvios = false;
-            int fechaEnviosDia = 0;
+            int fechaEnviosDia = 100;
             int duracionEnvios = 1;
-            boolean barrerPorcentajeEnvios = false;
-            int porcentajeEnviosInicial = 100;
-            int porcentajeEnviosMinimo = 10;
-            int pasoPorcentajeEnvios = 5;
             long semillaALNS = 17L;
             long semillaACO = 17L;
-            String algoritmo = null;
+            String algoritmo = "ALNS";
             boolean diasVuelosEspecificado = false;
 
             for (String arg : args) {
@@ -167,21 +160,24 @@ public class Main {
                     duracionEnvios = Integer.parseInt(arg.substring("--duracion-envios=".length()));
                 } else if (arg.startsWith("--rango-envios=")) {
                     String valor = arg.substring("--rango-envios=".length()).trim();
-                    String[] partes = valor.split("-");
-                    if (partes.length == 2) {
-                        int inicio = Integer.parseInt(partes[0]);
-                        int fin = Integer.parseInt(partes[1]);
-                        fechaEnviosDia = inicio;
-                        usarDiaMaximoEnvios = false;
-                        fechaEnviosFiltro = null;
-                        System.setProperty("rango.envios.inicio", String.valueOf(inicio));
-                        System.setProperty("rango.envios.fin", String.valueOf(fin));
+                    if (valor.contains("-")) {
+                        String[] partes = valor.split("-");
+                        if (partes.length == 2) {
+                            int inicio = Integer.parseInt(partes[0]);
+                            int fin = Integer.parseInt(partes[1]);
+                            fechaEnviosDia = inicio;
+                            duracionEnvios = fin - inicio + 1;
+                            usarDiaMaximoEnvios = false;
+                            fechaEnviosFiltro = null;
+                        }
                     } else if (valor.contains(",")) {
                         String[] dias = valor.split(",");
                         fechaEnviosDia = Integer.parseInt(dias[0].trim());
+                        // For comma-separated values, we only use the first day for now
+                        // A more complete implementation would need changes to StandardExperimentPipeline
+                        duracionEnvios = 1;
                         usarDiaMaximoEnvios = false;
                         fechaEnviosFiltro = null;
-                        System.setProperty("rango.envios.dias", valor);
                     }
                 } else if (arg.startsWith("--semilla-alns=")) {
                     semillaALNS = Long.parseLong(arg.substring("--semilla-alns=".length()));
@@ -192,7 +188,7 @@ public class Main {
                 }
             }
 
-            boolean usarFechaEnvios = usarDiaMaximoEnvios || fechaEnviosFiltro != null || fechaEnviosDia > 0 || barrerPorcentajeEnvios;
+            boolean usarFechaEnvios = usarDiaMaximoEnvios || fechaEnviosFiltro != null || fechaEnviosDia > 0;
             if (usarFechaEnvios && !diasVuelosEspecificado && diasVuelos == 0) {
                 diasVuelos = calcularDiasVuelosAutomatico();
                 System.out.println("[INFO] Días de vuelos calculados automáticamente: " + diasVuelos
