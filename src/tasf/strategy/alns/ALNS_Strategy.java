@@ -490,8 +490,9 @@ public class ALNS_Strategy implements PlanificadorStrategy {
                 propuesta.remove(id);
                 removidos.add(id);
             }
-        }
+}
 
+        // System.out.println("  [ALNS] forzarATiempo: " + mejorados + " paquetes reasignados");
         return propuesta;
     }
 
@@ -611,10 +612,10 @@ public class ALNS_Strategy implements PlanificadorStrategy {
             }
         }
 
-        if (mejorados > 0) {
-            System.out.println(String.format(Locale.ROOT,
-                    "  [ALNS] repararRemoviendo: %d paquetes reasignados", mejorados));
-        }
+        // if (mejorados > 0) {
+        //     System.out.println(String.format(Locale.ROOT,
+        //             "  [ALNS] repararRemoviendo: %d paquetes reasignados", mejorados));
+        // }
         return propuesta;
     }
 
@@ -732,9 +733,9 @@ for (Paquete p : sinRuta) {
             }
         }
 
-        System.out.println(String.format(Locale.ROOT,
-                "  [ALNS] reparacionSinRutas: totalSinRuta=%d, conCandidatos=%d, asignadosExtra=%d | bloqueos: vuelo=%d aeropuerto=%d",
-                totalSinRuta, conCandidatos, asignadosExtra, bloqueadoVuelo, bloqueadoAeropuerto));
+        // System.out.println(String.format(Locale.ROOT,
+        //         "  [ALNS] reparacionSinRutas: totalSinRuta=%d, conCandidatos=%d, asignadosExtra=%d | bloqueos: vuelo=%d aeropuerto=%d",
+        //         totalSinRuta, conCandidatos, asignadosExtra, bloqueadoVuelo, bloqueadoAeropuerto));
         return propuesta;
     }
 
@@ -868,9 +869,7 @@ for (Paquete p : sinRuta) {
             }
         }
 
-        if (eliminados > 0) {
-            System.out.println("  [ALNS] eliminarFueraPlazo: " + eliminados + " rutas eliminadas por llegar tarde");
-        }
+        // System.out.println("  [ALNS] eliminarFueraPlazo: " + eliminados + " rutas eliminadas por llegar tarde");
         return resultado;
     }
 }

@@ -153,20 +153,10 @@ public final class StandardExperimentPipeline {
         );
         long msScan = (System.nanoTime() - tPipeline) / 1_000_000;
         System.out.println(String.format(Locale.ROOT,
-                "[0/4] Escaneo liviano: %d días con envíos, %d envíos totales [%dms]",
+                "Escaneo: %d días, %d envíos [%dms]",
                 conteoPorDia.size(),
                 conteoPorDia.values().stream().mapToInt(Integer::intValue).sum(),
                 msScan));
-        System.out.println("[DEBUG] Primeros 10 días por conteo:");
-        conteoPorDia.entrySet().stream()
-                .sorted((e1, e2) -> Integer.compare(e2.getValue(), e1.getValue()))
-                .limit(10)
-                .forEach(e -> System.out.println("       " + e.getKey() + " = " + e.getValue() + " paquetes"));
-        System.out.println("[DEBUG] Primeros 10 días por fecha UTC:");
-        conteoPorDia.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .limit(10)
-                .forEach(e -> System.out.println("       " + e.getKey() + " = " + e.getValue() + " paquetes"));
 
         // Paso 2: Determinar qué fecha(s) se necesitan
         Set<LocalDate> fechasNecesarias = new HashSet<>();
@@ -267,26 +257,25 @@ public final class StandardExperimentPipeline {
                 maxEnviosPorArchivo,
                 fechasNecesarias
         );
-        long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
+long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         String ventanaStr = (ventanaFin != null)
-                ? " ventana=" + fechaInicioEfectiva + ".." + ventanaFin
-                : " (todos los vuelos)";
+                ? fechaInicioEfectiva + " a " + ventanaFin
+                : "todos";
         System.out.println(String.format(Locale.ROOT,
-                "[1/4] Datos cargados: aeropuertos=%d, vuelos=%d, paquetes=%d%s [%dms]",
-                dataset.getAeropuertos().size(),
-                dataset.getVuelos().size(),
+                "[1/4] Paquetes: %d | Vuelos: %d (%s) [%dms]",
                 dataset.getPaquetes().size(),
+                dataset.getVuelos().size(),
                 ventanaStr,
                 msLoad));
 
         Config_Simulacion config = construirConfig(dataset.getPaquetes().size());
 
-        DistribucionEnviosPorDia distribucionEnvios = new DistribucionEnviosPorDia(dataset.getPaquetes());
+        System.out.println("[2/4] Algoritmo: " + algoritmos.get(0).name);
 
+        DistribucionEnviosPorDia distribucionEnvios = new DistribucionEnviosPorDia(dataset.getPaquetes());
         CapacidadDiariaCalculadora calculadoraCapacidad = new CapacidadDiariaCalculadora(dataset.getVuelos());
         int capacidadMaximaDiaria = calculadoraCapacidad.estadisticas().maximo;
 
-        // DiaSeleccionado se usa en el loop; para modo filtrado es siempre el mismo día
         DistribucionEnviosPorDia.DiaSeleccionado diaUnico = null;
         if (fechaReferencia != null) {
             diaUnico = new DistribucionEnviosPorDia.DiaSeleccionado(
@@ -298,15 +287,9 @@ public final class StandardExperimentPipeline {
             if (diaUnico.envios.isEmpty()) {
                 throw new IllegalArgumentException("No hay envíos para la fecha: " + fechaReferencia);
             }
-        }
+}
 
-        int totalCorridas = algoritmos.size() * corridasPorAlgoritmo * nivelesObjetivo.size();
-        System.out.println(String.format(Locale.ROOT,
-                "[2/4] Setup: capacidad_max=%d maletas/dia, niveles=%d, total_corridas=%d",
-                capacidadMaximaDiaria, nivelesObjetivo.size(), totalCorridas));
-        System.out.println(String.format(Locale.ROOT,
-                "[3/4] Ejecutando %d algoritmos x %d corridas x %d niveles = %d corridas",
-                algoritmos.size(), corridasPorAlgoritmo, nivelesObjetivo.size(), totalCorridas));
+        System.out.println("[3/4] Algoritmo ejecutando...");
 
         List<RunRecord> rawRecords = new ArrayList<>();
         boolean encontradoUmbral = false;
@@ -449,7 +432,7 @@ public final class StandardExperimentPipeline {
         }
 
         System.out.println(String.format(Locale.ROOT,
-                "[4/4] Log exportado: %s [%dms total]",
+                "[4/4] Log: %s [%dms]",
                 jsonLog.getFileName(), msTotal));
 
         return new PipelineResult(capacidadMaximaDiaria, nivelesObjetivo, rawTable, summaryTable, null, null,
@@ -559,7 +542,6 @@ public final class StandardExperimentPipeline {
         config.setMinimaConexion(Duration.ofMinutes(30));
 
         if (ejecucionRapida) {
-            System.out.println("[INFO] Modo ejecución rápida activado");
             config.setIteracionesALNS(20);
             config.setIteracionesACO(10);
             config.setHormigasACO(4);

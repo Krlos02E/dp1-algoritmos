@@ -147,7 +147,7 @@ public class Main {
             long semillaACO = 17L;
             String algoritmo = null;
             boolean diasVuelosEspecificado = false;
-            boolean ejecucionRapida = false;
+            boolean ejecucionRapida = true;
 
             for (String arg : args) {
                 if (arg.startsWith("--data-dir=")) {
@@ -221,9 +221,6 @@ public class Main {
                 diasVuelos = calcularDiasVuelosAutomatico();
                 System.out.println("[INFO] Días de vuelos calculados automáticamente: " + diasVuelos
                         + " (basado en plazos: 24h mismo continente, 48h intercontinental + 24h buffer)");
-            }
-            if (ejecucionRapida) {
-                System.out.println("[INFO] Modo ejecución rápida: iteraciones reducidas, menos rutas candidatas");
             }
 
             return new ParametrosCli(

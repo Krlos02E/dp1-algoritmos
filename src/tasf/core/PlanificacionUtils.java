@@ -300,10 +300,10 @@ public final class PlanificacionUtils {
                     CACHE_GLOBAL_RUTAS.put(par, rutas);
 
                     int completados = (idx + 1);
-                    if (completados % 20 == 0 || completados == total) {
+                    if (completados == total) {
                         long ms = (System.nanoTime() - t0) / 1_000_000;
                         System.out.println(String.format(Locale.ROOT,
-                                "  [RUTAS] %d/%d pares encontrados [%dms]",
+                                "  [RUTAS] %d/%d pares [%dms]",
                                 completados, total, ms));
                     }
                 });
