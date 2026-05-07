@@ -41,12 +41,8 @@ public class Main {
                     parametros.fechaEnviosFiltro,
                     parametros.usarDiaMaximoEnvios,
                     parametros.fechaEnviosDia,
-                    parametros.barrerPorcentajeEnvios,
-                    parametros.porcentajeEnviosInicial,
-                    parametros.porcentajeEnviosMinimo,
-                    parametros.pasoPorcentajeEnvios,
-                    algoritmos,
-                    parametros.ejecucionRapida
+                    parametros.duracionEnvios,
+                    algoritmos
             );
 
             StandardExperimentPipeline.PipelineResult resultado = pipeline.ejecutar();
@@ -75,14 +71,10 @@ public class Main {
         private final LocalDate fechaEnviosFiltro;
         private final boolean usarDiaMaximoEnvios;
         private final int fechaEnviosDia;
-        private final boolean barrerPorcentajeEnvios;
-        private final int porcentajeEnviosInicial;
-        private final int porcentajeEnviosMinimo;
-        private final int pasoPorcentajeEnvios;
+        private final int duracionEnvios;
         private final long semillaALNS;
         private final long semillaACO;
         private final String algoritmo;
-        private final boolean ejecucionRapida;
 
         private static int calcularDiasVuelosAutomatico() {
             Duration plazoIntercontinental = Duration.ofHours(48);
@@ -94,24 +86,20 @@ public class Main {
             return (int) Math.ceil((double) horasTotales / 24);
         }
 
-        private ParametrosCli(
-                Path dataDir,
-                LocalDate fechaInicioVuelos,
-                int diasVuelos,
-                int maxEnviosPorArchivo,
-                int corridasPorAlgoritmo,
-                LocalDate fechaEnviosFiltro,
-                boolean usarDiaMaximoEnvios,
-                int fechaEnviosDia,
-                boolean barrerPorcentajeEnvios,
-                int porcentajeEnviosInicial,
-                int porcentajeEnviosMinimo,
-                int pasoPorcentajeEnvios,
-                long semillaALNS,
-                long semillaACO,
-                String algoritmo,
-                boolean ejecucionRapida
-        ) {
+    private ParametrosCli(
+            Path dataDir,
+            LocalDate fechaInicioVuelos,
+            int diasVuelos,
+            int maxEnviosPorArchivo,
+            int corridasPorAlgoritmo,
+            LocalDate fechaEnviosFiltro,
+            boolean usarDiaMaximoEnvios,
+            int fechaEnviosDia,
+            int duracionEnvios,
+            long semillaALNS,
+            long semillaACO,
+            String algoritmo
+    ) {
             this.dataDir = dataDir;
             this.fechaInicioVuelos = fechaInicioVuelos;
             this.diasVuelos = diasVuelos;
@@ -120,14 +108,10 @@ public class Main {
             this.fechaEnviosFiltro = fechaEnviosFiltro;
             this.usarDiaMaximoEnvios = usarDiaMaximoEnvios;
             this.fechaEnviosDia = fechaEnviosDia;
-            this.barrerPorcentajeEnvios = barrerPorcentajeEnvios;
-            this.porcentajeEnviosInicial = porcentajeEnviosInicial;
-            this.porcentajeEnviosMinimo = porcentajeEnviosMinimo;
-            this.pasoPorcentajeEnvios = pasoPorcentajeEnvios;
+            this.duracionEnvios = duracionEnvios;
             this.semillaALNS = semillaALNS;
             this.semillaACO = semillaACO;
             this.algoritmo = algoritmo;
-            this.ejecucionRapida = ejecucionRapida;
         }
 
         private static ParametrosCli desdeArgs(String[] args) {
@@ -139,6 +123,7 @@ public class Main {
             LocalDate fechaEnviosFiltro = null;
             boolean usarDiaMaximoEnvios = false;
             int fechaEnviosDia = 0;
+            int duracionEnvios = 1;
             boolean barrerPorcentajeEnvios = false;
             int porcentajeEnviosInicial = 100;
             int porcentajeEnviosMinimo = 10;
@@ -147,7 +132,6 @@ public class Main {
             long semillaACO = 17L;
             String algoritmo = null;
             boolean diasVuelosEspecificado = false;
-            boolean ejecucionRapida = true;
 
             for (String arg : args) {
                 if (arg.startsWith("--data-dir=")) {
@@ -179,6 +163,8 @@ public class Main {
                         fechaEnviosFiltro = LocalDate.parse(valor);
                         usarDiaMaximoEnvios = false;
                     }
+                } else if (arg.startsWith("--duracion-envios=")) {
+                    duracionEnvios = Integer.parseInt(arg.substring("--duracion-envios=".length()));
                 } else if (arg.startsWith("--rango-envios=")) {
                     String valor = arg.substring("--rango-envios=".length()).trim();
                     String[] partes = valor.split("-");
@@ -197,22 +183,12 @@ public class Main {
                         fechaEnviosFiltro = null;
                         System.setProperty("rango.envios.dias", valor);
                     }
-                } else if (arg.equals("--barrer-porcentaje-envios")) {
-                    barrerPorcentajeEnvios = true;
-                } else if (arg.startsWith("--porcentaje-envios-inicial=")) {
-                    porcentajeEnviosInicial = Integer.parseInt(arg.substring("--porcentaje-envios-inicial=".length()));
-                } else if (arg.startsWith("--porcentaje-envios-minimo=")) {
-                    porcentajeEnviosMinimo = Integer.parseInt(arg.substring("--porcentaje-envios-minimo=".length()));
-                } else if (arg.startsWith("--paso-porcentaje-envios=")) {
-                    pasoPorcentajeEnvios = Integer.parseInt(arg.substring("-- pasoPorcentajeEnvios=".length()));
                 } else if (arg.startsWith("--semilla-alns=")) {
                     semillaALNS = Long.parseLong(arg.substring("--semilla-alns=".length()));
                 } else if (arg.startsWith("--semilla-aco=")) {
                     semillaACO = Long.parseLong(arg.substring("--semilla-aco=".length()));
                 } else if (arg.startsWith("--algoritmo=")) {
                     algoritmo = arg.substring("--algoritmo=".length()).trim();
-                } else if (arg.equals("--ejecucion-rapida") || arg.equals("-r")) {
-                    ejecucionRapida = true;
                 }
             }
 
@@ -223,24 +199,20 @@ public class Main {
                         + " (basado en plazos: 24h mismo continente, 48h intercontinental + 24h buffer)");
             }
 
-            return new ParametrosCli(
-                    dataDir,
-                    fechaInicioVuelos,
-                    diasVuelos,
-                    Math.max(0, maxEnviosPorArchivo),
-                    Math.max(1, corridasPorAlgoritmo),
-                    fechaEnviosFiltro,
-                    usarDiaMaximoEnvios,
-                    fechaEnviosDia,
-                    barrerPorcentajeEnvios,
-                    porcentajeEnviosInicial,
-                    porcentajeEnviosMinimo,
-                    pasoPorcentajeEnvios,
-                    semillaALNS,
-                    semillaACO,
-                    algoritmo,
-                    ejecucionRapida
-            );
+             return new ParametrosCli(
+                     dataDir,
+                     fechaInicioVuelos,
+                     diasVuelos,
+                     Math.max(0, maxEnviosPorArchivo),
+                     Math.max(1, corridasPorAlgoritmo),
+                     fechaEnviosFiltro,
+                     usarDiaMaximoEnvios,
+                     fechaEnviosDia,
+                     duracionEnvios,
+                     semillaALNS,
+                     semillaACO,
+                     algoritmo
+             );
         }
     }
 }

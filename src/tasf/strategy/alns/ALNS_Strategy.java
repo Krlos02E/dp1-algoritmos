@@ -45,14 +45,10 @@ public class ALNS_Strategy implements PlanificadorStrategy {
 
     @Override
     public Solucion planificar(Dataset datos, Config_Simulacion config) {
-        RouteFinder finder = new RouteFinder(datos);
+RouteFinder finder = new RouteFinder(datos);
         Map<String, List<Ruta>> candidatos = PlanificacionUtils.construirCandidatosRutas(datos, config, finder);
 
-        // Intento 1: Enfoque reverso - asignar todo y remover el mínimo para factibilidad
-        Map<String, Ruta> propuestaReversa = construirReverso(datos, config, candidatos);
-        Solucion solReversa = PlanificacionUtils.evaluarAsignacion("ALNS-reverso", propuestaReversa, datos, config);
-
-        // Intento 2: Enfoque ALNS normal
+        // Optimización: Solo construir solución inicial greedy (reverso eliminado)
         Map<String, Ruta> propuestaNormal = construirInicialGreedy(datos, config, candidatos);
         Solucion solucionActual = PlanificacionUtils.evaluarAsignacion("ALNS", propuestaNormal, datos, config);
         Map<String, Ruta> propuestaMejor = new HashMap<>(propuestaNormal);
@@ -60,18 +56,11 @@ public class ALNS_Strategy implements PlanificadorStrategy {
 
         Map<String, Ruta> propuestaActual = new HashMap<>(propuestaNormal);
 
-        // Tomar el mejor de los dos intentos iniciales
-        if (solReversa.getCostoTotal() < mejorSolucion.getCostoTotal()) {
-            propuestaMejor = new HashMap<>(propuestaReversa);
-            mejorSolucion = solReversa;
-            propuestaActual = propuestaReversa;
-            solucionActual = solReversa;
-        }
-
+        // Optimización: 10 iteraciones (en vez de 20), evaluar cada 5
 double temperatura = Math.max(1.0, solucionActual.getCostoTotal() * 0.05);
         int sinMejora = 0;
-        final int MAX_SIN_MEJORA = 5;
-        final int EVAL_CADA = 3;
+        final int MAX_SIN_MEJORA = 3;
+        final int EVAL_CADA = 5;
 
         for (int iter = 1; iter <= Math.max(1, config.getIteracionesALNS()); iter++) {
             int opR = seleccionarPorRuleta(pesosRuptura);
@@ -80,10 +69,10 @@ double temperatura = Math.max(1.0, solucionActual.getCostoTotal() * 0.05);
             Map<String, Ruta> candidata = new HashMap<>(propuestaActual);
             Set<String> destruidos = aplicarRuptura(opR, candidata, datos, config, candidatos);
             aplicarReparacion(opP, candidata, new ArrayList<>(destruidos), datos, config, candidatos);
-            intentarAsignarNoAsignados(candidata, datos, config, candidatos, 5);
+            intentarAsignarNoAsignados(candidata, datos, config, candidatos, 3);
 
             Solucion solCandidata = null;
-            if (iter % EVAL_CADA == 0) {
+            if (iter == 1 || iter % EVAL_CADA == 0) {
                 solCandidata = PlanificacionUtils.evaluarAsignacion("ALNS", candidata, datos, config);
             }
 
@@ -122,18 +111,11 @@ double temperatura = Math.max(1.0, solucionActual.getCostoTotal() * 0.05);
                 actualizarPesos(pesosReparacion, puntajesReparacion, usosReparacion, config.getTasaAprendizajePesos());
             }
 
-            temperatura = Math.max(1e-6, temperatura * 0.995);
+temperatura = Math.max(1e-6, temperatura * 0.995);
         }
 
-        // Reparación final agresiva: multi-paso
-        propuestaMejor = repararSinRutas(propuestaMejor, datos, config, candidatos);
-        // Segundo paso: intentar remover y reasignar para liberar espacio
-        propuestaMejor = repararRemoviendo(propuestaMejor, datos, config, candidatos);
-
-        // Paso 3: forzar rutas a tiempo si existen alternativas
+        // Optimización: Solo fases críticas de reparación (forzarATiempo + eliminar rutas fuera plazo)
         propuestaMejor = forzarATiempo(propuestaMejor, datos, config, candidatos);
-
-        // Paso 4: ELIMINAR rutas fuera del deadline - STRICTO
         propuestaMejor = eliminarRutasFueraDePlazo(propuestaMejor, datos, config);
 
         Solucion salida = PlanificacionUtils.evaluarAsignacion("ALNS", propuestaMejor, datos, config);
