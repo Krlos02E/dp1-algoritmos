@@ -246,22 +246,23 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
             LocalDate minFecha = fechasNecesarias.stream().min(LocalDate::compareTo).orElseThrow();
 
             if (fechaEnviosRangoInicio != null) {
-                // Rango explícito: ventana desde minFecha - 2 hasta maxFecha + diasVuelos
-                fechaInicioEfectiva = minFecha.minusDays(2);
-                diasVuelosEfectivos = diasVuelos + 2;
-            } else if (fechaEnviosFiltro != null) {
-                // Fecha específica: ventana centrada en esa fecha
-                fechaInicioEfectiva = fechaEnviosFiltro.minusDays(2);
-                diasVuelosEfectivos = diasVuelos + 2;
-            } else if (usarDiaMaximoEnvios) {
-                // Día máximo: ventana centrada en ese día
-                fechaInicioEfectiva = fechaReferencia.minusDays(2);
-                diasVuelosEfectivos = diasVuelos + 2;
-            } else if (fechaEnviosDia > 0) {
-                // Rango por índice: ventana que cubra todo el rango
+                // Rango explícito: ventana desde minFecha - 2 hasta maxFecha + 3
                 long diasRango = ChronoUnit.DAYS.between(minFecha, maxFecha) + 1;
                 fechaInicioEfectiva = minFecha.minusDays(2);
-                diasVuelosEfectivos = (int) Math.max(diasVuelos + 2, diasRango + 2);
+                diasVuelosEfectivos = (int) Math.max(diasVuelos, diasRango + 5);
+            } else if (fechaEnviosFiltro != null) {
+                // Fecha específica: ventana desde fecha - 2 hasta fecha + 3
+                fechaInicioEfectiva = fechaEnviosFiltro.minusDays(2);
+                diasVuelosEfectivos = Math.max(diasVuelos, 6);
+            } else if (usarDiaMaximoEnvios) {
+                // Día máximo: ventana desde fecha - 2 hasta fecha + 3
+                fechaInicioEfectiva = fechaReferencia.minusDays(2);
+                diasVuelosEfectivos = Math.max(diasVuelos, 6);
+            } else if (fechaEnviosDia > 0) {
+                // Rango por índice: ventana desde minFecha - 2 hasta maxFecha + 3
+                long diasRango = ChronoUnit.DAYS.between(minFecha, maxFecha) + 1;
+                fechaInicioEfectiva = minFecha.minusDays(2);
+                diasVuelosEfectivos = (int) Math.max(diasVuelos, diasRango + 5);
             } else {
                 // Comportamiento original para múltiples fechas
                 long buffer = configHorizonteDias();
@@ -603,23 +604,22 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             config.setMaxRutasPorPaquete(4);
             config.setTopRutasACO(2);
             config.setHormigasEliteACO(1);
-            config.setHorizonteBusqueda(Duration.ofHours(48));
             config.setMaxEscalas(2);
             config.setVentanaActualizacionPesos(5);
             config.setEvaporacionFeromona(0.4);
 
         int diasDisponibles = diasVuelos > 0 ? diasVuelos : 1095;
-        long horasMaximas = Math.min(240L, diasDisponibles * 24L);
-        config.setHorizonteBusqueda(Duration.ofHours(horasMaximas));
         int maxEscalas = diasDisponibles <= 3 ? 2 : 3;
         config.setMaxEscalas(maxEscalas);
+
+        // Horizonte limitado por deadline máximo (48h intercontinental) + 24h buffer
+        config.setHorizonteBusqueda(Duration.ofHours(72));
 
         boolean muchosPaquetes = totalPaquetes > 5000;
         boolean muchosVuelos = diasVuelos >= 100;
 
         if (muchosPaquetes && muchosVuelos) {
             config.setMaxRutasPorPaquete(50);
-            config.setHorizonteBusqueda(Duration.ofHours(2160)); // 90 días
             config.setIteracionesALNS(100);
             config.setIteracionesACO(50);
             config.setVentanaActualizacionPesos(5);
@@ -628,7 +628,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             config.setBetaACO(2.8);
             config.setEvaporacionFeromona(0.3);
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTIVO] paquetes=%d vuelos=%d → ALNS=100, ACO=50, maxRutas=50, horizonte=90d",
+                    "  [ADAPTATIVO] paquetes=%d vuelos=%d → ALNS=100, ACO=50, maxRutas=50",
                     totalPaquetes, diasVuelos * 2866));
         } else if (muchosPaquetes) {
             config.setMaxRutasPorPaquete(50);
@@ -636,7 +636,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             config.setIteracionesACO(50);
             config.setVentanaActualizacionPesos(5);
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTIVO] paquetes=%d → ALNS=100, ACO=50, maxRutas=50",
+                    "  [ADAPTATIVO] paquetes=%d → ALNS=100, ACO=50, maxRutas=50",
                     totalPaquetes));
         }
         return config;

@@ -117,7 +117,7 @@ public class Main {
 
         private static ParametrosCli desdeArgs(String[] args) {
             Path dataDir = Path.of("data").toAbsolutePath().normalize();
-            LocalDate fechaInicioVuelos = LocalDate.of(2026, 1, 2);
+            LocalDate fechaInicioVuelos = LocalDate.of(2026, 1, 1);
             int diasVuelos = 3;
             int maxEnviosPorArchivo = 0;
             LocalDate fechaEnviosFiltro = null;
