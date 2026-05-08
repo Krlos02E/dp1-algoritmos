@@ -5,7 +5,7 @@
 La solución quedó dividida en dos fases coordinadas:
 
 ### Fase 1: planificación de rutas
-- Algoritmos: ACO y ALNS.
+- Algoritmos: ACO y ALNS (se ejecuta uno por invocación).
 - Salida: `Map<String, Ruta>` con una ruta seleccionada por paquete.
 - Contrato: `PlanificadorRutasStrategy`.
 - Implementadores: `ACO_RutasPlanner`, `ALNS_RutasPlanner`.
@@ -21,25 +21,39 @@ La solución quedó dividida en dos fases coordinadas:
 - Función: coordina ambas fases y retorna una `Solucion` evaluada.
 
 La evaluación final usa la función global de `PlanificacionUtils` y no una puntuación local por paquete.
+
 ---
 
 ## Archivos del Proyecto
 
 ```
 src/tasf/
+├── app/
+│   └── Main.java                              (PUNTO DE ENTRADA + CLI)
+├── experiments/
+│   ├── StandardExperimentPipeline.java         (PIPELINE DE EXPERIMENTACIÓN)
+│   └── GeneradorNivelesCarga.java              (GENERADOR DE NIVELES)
 ├── strategy/
-│   ├── PlanificadorRutasStrategy.java           (INTERFAZ NUEVA)
-│   ├── TwoPhaseOrchestrator.java               (ORQUESTADOR NUEVO)
+│   ├── PlanificadorRutasStrategy.java           (INTERFAZ FASE 1)
+│   ├── TwoPhaseOrchestrator.java               (ORQUESTADOR)
 │   ├── aco/
-│   │   └── ACO_RutasPlanner.java              (IMPLEMENTADOR ACO)
+│   │   ├── ACO_RutasPlanner.java               (WRAPPER ACO)
+│   │   └── ACO_Strategy.java                   (LÓGICA ACO)
 │   ├── alns/
-│   │   └── ALNS_RutasPlanner.java             (IMPLEMENTADOR ALNS)
-│   ├── flow/
-│   │   └── MinCostFlowAssigner.java           (ASIGNADOR DE VUELOS)
-│
-└── Documentación/
-   ├── ARQUITECTURA_DOS_FASES.md              (GUÍA COMPLETA)
-   └── IMPLEMENTACION_DOS_FASES.md            (ESTE DOCUMENTO)
+│   │   ├── ALNS_RutasPlanner.java              (WRAPPER ALNS)
+│   │   └── ALNS_Strategy.java                  (LÓGICA ALNS)
+│   └── flow/
+│       ├── MinCostFlowAsignador.java           (ADAPTADOR FASE 2)
+│       └── MinCostFlowAssigner.java            (ASIGNADOR DE VUELOS)
+├── core/
+│   ├── Dataset.java                            (MODELO DE DATOS)
+│   ├── EstadoOperacional.java                  (ESTADO DE CAPACIDAD)
+│   ├── PlanificacionUtils.java                 (UTILIDADES + EVALUACIÓN)
+│   ├── RouteFinder.java                        (BÚSQUEDA DE RUTAS)
+│   ├── DistribucionEnviosPorDia.java           (DISTRIBUCIÓN POR DÍA)
+│   └── ...
+└── io/
+    └── DatasetTextoLoader.java                 (CARGA DE ARCHIVOS)
 ```
 
 ---
@@ -80,9 +94,9 @@ Map<String, Ruta> rutasValidadas = asignador.asignarEnviosAVuelos(rutasSeleccion
 
 La evaluación global se calcula con la utilidad compartida del proyecto:
 
-$$
-CostoTotal = HorasTransporte + PenalizacionNoAsignacion + PenalizacionPlazo + PenalizacionColapso
-$$
+```
+costo = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + horasAcumuladas
+```
 
 La Fase 2 no vuelve a puntuar rutas alternativas. Solo valida la selección de la Fase 1 y actualiza el estado operacional.
 
@@ -140,7 +154,7 @@ Dataset → Fase 1: rutas → Fase 2: validación → Solucion
 ```
 - La construcción y la validación quedan separadas.
 - La evaluación global se comparte entre algoritmos.
-- El pipeline puede ejecutar ALNS y ACO con la misma entrada.
+- El pipeline puede ejecutar ALNS o ACO con la misma entrada.
 
 ---
 
@@ -153,18 +167,17 @@ El pipeline estándar automatiza el flujo completo:
 ```
 Dataset
   ↓
-Capacidad diaria
+Determinar fechas de envío (rango explícito, fecha fija, max, o índice)
   ↓
-Generación o selección de nivel de carga
+Calcular ventana de vuelos centrada en fechas de envío
   ↓
-Para cada configuración:
-  ├─ Ejecutar ALNS
-  ├─ Ejecutar ACO
-  ├─ Validar rutas seleccionadas
-  ├─ Detectar colapsos
-  └─ Guardar resultados
+Cargar paquetes y vuelos filtrados
   ↓
-Exportar CSV raw y resumen
+Ejecutar algoritmo seleccionado (ALNS o ACO)
+  ↓
+Validar rutas seleccionadas (Fase 2)
+  ↓
+Evaluar solución y exportar log JSON
 ```
 
 ### Compilación y ejecución
@@ -172,7 +185,7 @@ Exportar CSV raw y resumen
 ```bash
 javac -encoding UTF-8 -d out $(find src -name "*.java")
 java -cp out tasf.app.Main
-java -cp out tasf.app.Main --corridas=20 --fecha-inicio-vuelos=2026-02-01
+java -cp out tasf.app.Main --algoritmo=ACO --fecha-envios=max
 ```
 
 Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles completos.
@@ -185,7 +198,6 @@ Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles comp
 - [ARQUITECTURA_DOS_FASES.md](ARQUITECTURA_DOS_FASES.md)
 - [data/README.md](data/README.md)
 - [GUIA_DISTRIBUCION_ENVIOS.md](GUIA_DISTRIBUCION_ENVIOS.md)
-- [GUIA_GENERADOR_NIVELES_CARGA.md](GUIA_GENERADOR_NIVELES_CARGA.md)
 
 ---
 
@@ -194,7 +206,7 @@ Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles comp
 - Arquitectura de dos fases funcional.
 - Pipeline integrado en `Main`.
 - Evaluación global compartida entre ACO y ALNS.
-- CSV raw y resumen generados en `data/output/`.
+- Log JSON generado en `data/output/`.
 
 ---
 

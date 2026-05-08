@@ -34,7 +34,6 @@ public class Main {
                     parametros.fechaInicioVuelos,
                     parametros.diasVuelos,
                     parametros.maxEnviosPorArchivo,
-                    parametros.corridasPorAlgoritmo,
                     parametros.fechaEnviosFiltro,
                     parametros.usarDiaMaximoEnvios,
                     parametros.fechaEnviosDia,
@@ -66,7 +65,6 @@ public class Main {
         private final LocalDate fechaInicioVuelos;
         private final int diasVuelos;
         private final int maxEnviosPorArchivo;
-        private final int corridasPorAlgoritmo;
         private final LocalDate fechaEnviosFiltro;
         private final boolean usarDiaMaximoEnvios;
         private final int fechaEnviosDia;
@@ -92,7 +90,6 @@ public class Main {
             LocalDate fechaInicioVuelos,
             int diasVuelos,
             int maxEnviosPorArchivo,
-            int corridasPorAlgoritmo,
             LocalDate fechaEnviosFiltro,
             boolean usarDiaMaximoEnvios,
             int fechaEnviosDia,
@@ -107,7 +104,6 @@ public class Main {
             this.fechaInicioVuelos = fechaInicioVuelos;
             this.diasVuelos = diasVuelos;
             this.maxEnviosPorArchivo = maxEnviosPorArchivo;
-            this.corridasPorAlgoritmo = corridasPorAlgoritmo;
             this.fechaEnviosFiltro = fechaEnviosFiltro;
             this.usarDiaMaximoEnvios = usarDiaMaximoEnvios;
             this.fechaEnviosDia = fechaEnviosDia;
@@ -124,10 +120,9 @@ public class Main {
             LocalDate fechaInicioVuelos = LocalDate.of(2026, 1, 2);
             int diasVuelos = 3;
             int maxEnviosPorArchivo = 0;
-            int corridasPorAlgoritmo = 1;
             LocalDate fechaEnviosFiltro = null;
             boolean usarDiaMaximoEnvios = false;
-            int fechaEnviosDia = 100;
+            int fechaEnviosDia = 0;
             int duracionEnvios = 1;
             LocalDate fechaEnviosRangoInicio = null;
             LocalDate fechaEnviosRangoFin = null;
@@ -151,8 +146,6 @@ public class Main {
                     } else {
                         maxEnviosPorArchivo = Integer.parseInt(valor);
                     }
-                } else if (arg.startsWith("--corridas=")) {
-                    corridasPorAlgoritmo = Integer.parseInt(arg.substring("--corridas=".length()));
                 } else if (arg.startsWith("--fecha-envios=")) {
                     String valor = arg.substring("--fecha-envios=".length()).trim().toLowerCase();
                     if (valor.equals("max") || valor.equals("maximo") || valor.equals("máximo")) {
@@ -212,22 +205,24 @@ public class Main {
 
             boolean usarFechaEnvios = usarDiaMaximoEnvios || fechaEnviosFiltro != null
                     || fechaEnviosDia > 0 || fechaEnviosRangoInicio != null;
+            if (!usarFechaEnvios) {
+                usarDiaMaximoEnvios = true;
+            }
             if (usarFechaEnvios && !diasVuelosEspecificado) {
                 diasVuelos = calcularDiasVuelosAutomatico();
                 System.out.println("[INFO] Días de vuelos calculados automáticamente: " + diasVuelos
                         + " (basado en plazos: 24h mismo continente, 48h intercontinental + 24h buffer)");
             }
 
-             return new ParametrosCli(
-                     dataDir,
-                     fechaInicioVuelos,
-                     diasVuelos,
-                     Math.max(0, maxEnviosPorArchivo),
-                     Math.max(1, corridasPorAlgoritmo),
-                     fechaEnviosFiltro,
-                     usarDiaMaximoEnvios,
-                     fechaEnviosDia,
-                     duracionEnvios,
+              return new ParametrosCli(
+                      dataDir,
+                      fechaInicioVuelos,
+                      diasVuelos,
+                      Math.max(0, maxEnviosPorArchivo),
+                      fechaEnviosFiltro,
+                      usarDiaMaximoEnvios,
+                      fechaEnviosDia,
+                      duracionEnvios,
                      fechaEnviosRangoInicio,
                      fechaEnviosRangoFin,
                      semillaALNS,

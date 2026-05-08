@@ -5,8 +5,8 @@
 La solución se ejecuta en dos fases coordinadas:
 
 ### Fase 1: planificación de rutas con metaheurísticas
-- Responsabilidad: construir una solución completa paquete -> ruta.
-- Algoritmos: ACO y ALNS.
+- Responsabilidad: construir una solución completa paquete → ruta.
+- Algoritmos: ACO y ALNS (se ejecuta uno por invocación).
 - Salida: `Map<String, Ruta>` con una ruta seleccionada por paquete.
 - Ubicación: `tasf.strategy.aco.ACO_RutasPlanner` y `tasf.strategy.alns.ALNS_RutasPlanner`.
 
@@ -18,6 +18,7 @@ La solución se ejecuta en dos fases coordinadas:
 - Ubicación: `tasf.strategy.flow.MinCostFlowAssigner`.
 
 ACO y ALNS no entregan listas de candidatos al orquestador externo. Construyen soluciones completas, las puntúan con costo global y luego la Fase 2 valida capacidad, ocupación y restricciones temporales sobre la ruta elegida.
+
 ---
 
 ## Estructura de clases
@@ -33,7 +34,7 @@ public interface PlanificadorRutasStrategy {
 Contrato de Fase 1: devuelve una ruta seleccionada por paquete.
 
 #### `PlanificadorStrategy`
-Interfaz histórica que sigue existiendo para las estrategias completas ACO/ALNS.
+Interfaz interna que usan `ALNS_Strategy` y `ACO_Strategy` para la lógica metaheurística pura.
 
 #### `Asignador`
 ```java
@@ -47,11 +48,11 @@ Contrato de Fase 2: valida la ruta ya elegida y la reserva si sigue siendo facti
 
 #### `ACO_RutasPlanner`
 - Enlaza `PlanificadorStrategy` con `PlanificadorRutasStrategy`.
-- Ejecuta `ACO_Strategy` y expone su solución paquete -> ruta.
+- Ejecuta `ACO_Strategy` y expone su solución paquete → ruta.
 
 #### `ALNS_RutasPlanner`
 - Enlaza `PlanificadorStrategy` con `PlanificadorRutasStrategy`.
-- Ejecuta `ALNS_Strategy` y expone su solución paquete -> ruta.
+- Ejecuta `ALNS_Strategy` y expone su solución paquete → ruta.
 
 ### Implementaciones de la Fase 2
 
@@ -153,10 +154,9 @@ Evaluación final → Solucion
 
 La evaluación global vive en `PlanificacionUtils.evaluarAsignacion(...)` y combina:
 
-- horas totales de transporte
-- penalización por paquetes no asignados
-- penalización por entrega fuera de plazo
-- penalización por colapso operacional
+```
+costo = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + horasAcumuladas
+```
 
 La Fase 2 no reoptimiza la asignación; solo verifica si la ruta elegida sigue siendo factible.
 
@@ -176,18 +176,18 @@ La Fase 2 no reoptimiza la asignación; solo verifica si la ruta elegida sigue s
 
 La configuración activa del pipeline se concentra en `Main` y `StandardExperimentPipeline`:
 
-- `--data-dir`
-- `--fecha-inicio-vuelos`
-- `--dias-vuelos`
-- `--max-envios`
-- `--corridas`
-- `--fecha-envios`
-- `--barrer-porcentaje-envios`
-- `--porcentaje-envios-inicial`
-- `--porcentaje-envios-minimo`
-- `--paso-porcentaje-envios`
-- `--semilla-alns`
-- `--semilla-aco`
+| Parámetro | Default | Descripción |
+|-----------|---------|-------------|
+| `--data-dir` | `data` | Directorio raíz de datos |
+| `--algoritmo` | `ALNS` | `ALNS` o `ACO` |
+| `--fecha-inicio-vuelos` | `2026-01-02` | Fecha de inicio de la ventana de vuelos |
+| `--dias-vuelos` | `3` | Días de vuelos; `0` = todos (~1095 días) |
+| `--max-envios` | `0` | Límite de envíos por archivo |
+| `--fecha-envios` | `max` | Índice (`5`), fecha (`2026-01-06`), o `max` |
+| `--duracion-envios` | `1` | Días consecutivos de envíos |
+| `--rango-envios` | - | `2026-01-01:2026-01-07` o índice `3-7` |
+| `--semilla-alns` | `17` | Semilla para ALNS |
+| `--semilla-aco` | `17` | Semilla para ACO |
 
 ---
 
@@ -196,11 +196,20 @@ La configuración activa del pipeline se concentra en `Main` y `StandardExperime
 El pipeline estándar:
 
 1. Carga datos automáticamente.
-2. Calcula capacidad diaria y distribuciones.
-3. Genera niveles de carga o usa una fecha fija.
-4. Ejecuta ALNS y ACO sobre la misma entrada.
-5. Evalúa cada solución con la función global compartida.
-6. Exporta resultados raw y resumen a CSV.
+2. Determina qué fecha(s) de envíos procesar (rango explícito, fecha fija, día máximo, o índice).
+3. Calcula la ventana efectiva de vuelos centrada en las fechas de envío.
+4. Ejecuta el algoritmo seleccionado sobre la misma entrada.
+5. Evalúa la solución con la función global compartida.
+6. Exporta un log JSON en `data/output/`.
+
+### Selección de fechas de envío
+
+El pipeline soporta múltiples modos:
+
+- **Rango explícito** (`--rango-envios=2026-01-01:2026-01-07`): procesa todos los paquetes del rango completo.
+- **Índice numérico** (`--fecha-envios=5`): día relativo a `fechaInicioVuelos`.
+- **Fecha específica** (`--fecha-envios=2026-01-06`): fecha exacta.
+- **Día máximo** (`--fecha-envios=max`): escanea todos los archivos y selecciona el día con más envíos (default).
 
 ---
 
@@ -210,4 +219,3 @@ El pipeline estándar:
 2. Ajustar la política local de refinamiento en ACO.
 3. Añadir métricas más detalladas de colapso.
 4. Explorar paralelización en la evaluación de corridas.
-

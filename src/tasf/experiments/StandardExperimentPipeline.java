@@ -14,8 +14,6 @@ import tasf.model.Paquete;
 import tasf.model.Ruta;
 import tasf.strategy.PlanificadorRutasStrategy;
 import tasf.strategy.TwoPhaseOrchestrator;
-import tasf.strategy.aco.ACO_RutasPlanner;
-import tasf.strategy.alns.ALNS_RutasPlanner;
 import tasf.strategy.flow.MinCostFlowAsignador;
 import tasf.model.ResultadoEnvio;
 
@@ -27,9 +25,9 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -44,10 +42,8 @@ import java.util.function.Supplier;
  * Pipeline estandar de experimentacion.
  *
  * Hace el flujo completo solicitado:
- * - Calcula capacidad maxima diaria
- * - Genera niveles de carga 20%-70%
- * - Selecciona dias por numero de envios
- * - Ejecuta ALNS y ACO por separado
+ * - Selecciona fecha(s) de envíos (rango, fecha fija, día máximo, o índice)
+ * - Ejecuta un algoritmo (ALNS o ACO)
  * - Detecta colapso del sistema
  * - Exporta resultados listos para ANOVA o graficas
  * - Usa Min-Cost Flow como asignador unico
@@ -59,7 +55,6 @@ public final class StandardExperimentPipeline {
     private final LocalDate fechaInicioVuelos;
     private final int diasVuelos;
     private final int maxEnviosPorArchivo;
-    private final int corridasPorAlgoritmo;
     private final LocalDate fechaEnviosFiltro;
     private final boolean usarDiaMaximoEnvios;
     private final int fechaEnviosDia;
@@ -73,7 +68,6 @@ public final class StandardExperimentPipeline {
             LocalDate fechaInicioVuelos,
             int diasVuelos,
             int maxEnviosPorArchivo,
-            int corridasPorAlgoritmo,
             LocalDate fechaEnviosFiltro,
             boolean usarDiaMaximoEnvios,
             int fechaEnviosDia,
@@ -86,7 +80,6 @@ public final class StandardExperimentPipeline {
         this.fechaInicioVuelos = Objects.requireNonNull(fechaInicioVuelos, "fechaInicioVuelos no puede ser null");
         this.diasVuelos = diasVuelos;
         this.maxEnviosPorArchivo = Math.max(0, maxEnviosPorArchivo);
-        this.corridasPorAlgoritmo = Math.max(1, corridasPorAlgoritmo);
         this.fechaEnviosFiltro = fechaEnviosFiltro;
         this.usarDiaMaximoEnvios = usarDiaMaximoEnvios;
         this.fechaEnviosDia = fechaEnviosDia;
@@ -98,26 +91,6 @@ public final class StandardExperimentPipeline {
         }
         this.algoritmos = List.copyOf(algoritmos);
     }
-
-     public static StandardExperimentPipeline crearDefecto(Path dataDir, int corridasPorAlgoritmo) {
-          return new StandardExperimentPipeline(
-                  dataDir,
-                   LocalDate.of(2026, 1, 2),
-                   0,  // 0 = cargar todos los vuelos (~1095 días), igual que el default de CLI
-                   0,
-                   corridasPorAlgoritmo,
-                   null,
-                   false, // usarDiaMaximoEnvios
-                   0, // fechaEnviosDia
-                   1, // duracionEnvios
-                   null, // fechaEnviosRangoInicio
-                   null, // fechaEnviosRangoFin
-                  List.of(
-                          new AlgorithmSpec("ALNS", () -> new ALNS_RutasPlanner(17L)),
-                          new AlgorithmSpec("ACO", () -> new ACO_RutasPlanner(17L))
-                  )
-          );
-     }
 
     /** Devuelve los dias de horizonte de busqueda usados en config adaptativa */
     private int configHorizonteDias() {
@@ -145,7 +118,7 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
         LocalDate fechaReferencia = null;
         if (fechaEnviosRangoInicio != null && fechaEnviosRangoFin != null) {
             // Rango de fechas explícito con fechas reales
-            System.out.println(String.format("Rango explícito: %s a %s (%d días)",
+            System.out.println(String.format("Envíos: %s a %s (%d días)",
                     fechaEnviosRangoInicio, fechaEnviosRangoFin, duracionEnvios));
             LocalDate current = fechaEnviosRangoInicio;
             while (!current.isAfter(fechaEnviosRangoFin)) {
@@ -155,13 +128,41 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
             fechaReferencia = fechaEnviosRangoInicio;
             conteoPorDia = new HashMap<>();
             msScan = 0;
+        } else if (fechaEnviosFiltro != null) {
+            // Fecha específica
+            fechaReferencia = fechaEnviosFiltro;
+            fechasNecesarias.add(fechaReferencia);
+            System.out.println(String.format("Envíos: %s", fechaReferencia));
+            conteoPorDia = new HashMap<>();
+            msScan = 0;
+        } else if (usarDiaMaximoEnvios) {
+            // Día con más envíos: escanear para encontrarlo
+            conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
+                    resolverCarpetaEnvios(dataDir), aeropuertos
+            );
+            msScan = (System.nanoTime() - tPipeline) / 1_000_000;
+            fechaReferencia = conteoPorDia.entrySet().stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElseThrow(() -> new IllegalStateException("No hay días con envíos"));
+            fechasNecesarias.add(fechaReferencia);
+            System.out.println(String.format(Locale.ROOT,
+                    "Envíos: %s (%d envíos, escaneo %d días en %dms)",
+                    fechaReferencia,
+                    conteoPorDia.get(fechaReferencia),
+                    conteoPorDia.size(),
+                    msScan));
         } else if (fechaEnviosDia > 0 && duracionEnvios > 0) {
             // Rango de fechas por índice de día (relativo a fechaInicioVuelos)
             LocalDate fechaInicioBase = fechaInicioVuelos;
             fechaReferencia = fechaInicioBase.plusDays(fechaEnviosDia - 1);
             LocalDate fechaFin = fechaReferencia.plusDays(duracionEnvios - 1);
-            System.out.println(String.format("Escaneo: días %d-%d (%s a %s) (optimizado)",
-                    fechaEnviosDia, fechaEnviosDia + duracionEnvios - 1, fechaReferencia, fechaFin));
+            if (duracionEnvios == 1) {
+                System.out.println(String.format("Envíos: día %d (%s)", fechaEnviosDia, fechaReferencia));
+            } else {
+                System.out.println(String.format("Envíos: días %d-%d (%s a %s)",
+                        fechaEnviosDia, fechaEnviosDia + duracionEnvios - 1, fechaReferencia, fechaFin));
+            }
             for (int i = 0; i < duracionEnvios; i++) {
                 fechasNecesarias.add(fechaReferencia.plusDays(i));
             }
@@ -173,7 +174,7 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
             msScan = 0;
             LocalDate fechaInicioBase = fechaInicioVuelos;
             fechaReferencia = fechaInicioBase.plusDays(fechaEnviosDia - 1);
-            System.out.println(String.format("Escaneo: día %d -> %s (optimizado)", fechaEnviosDia, fechaReferencia));
+            System.out.println(String.format("Envíos: día %d (%s)", fechaEnviosDia, fechaReferencia));
         } else {
             conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
                     resolverCarpetaEnvios(dataDir), aeropuertos
@@ -187,11 +188,8 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
         }
 
         // Paso 2: Determinar qué fecha(s) se necesitan
-        int capacidadMaximaEnviosDiaria = conteoPorDia.isEmpty() ? 1 : conteoPorDia.values().stream()
-                .mapToInt(Integer::intValue).max().orElse(1);
         List<Integer> nivelesObjetivo;
 
-        // Si ya tenemos fechas del rango explícito, usarlas directamente
         if (fechaEnviosRangoInicio != null && fechaEnviosRangoFin != null) {
             // Rango explícito: escanear para obtener conteo real
             conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
@@ -202,52 +200,40 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
                 conteoTotal += conteoPorDia.getOrDefault(f, 0);
             }
             nivelesObjetivo = List.of(Math.max(1, conteoTotal));
-        } else if (fechaEnviosDia > 0 && duracionEnvios > 0) {
-            // fechasNecesarias ya calculado arriba
-            nivelesObjetivo = List.of(duracionEnvios * 500);
-        } else if (usarDiaMaximoEnvios || fechaEnviosFiltro != null || fechaEnviosDia > 0) {
-            if (usarDiaMaximoEnvios || fechaEnviosFiltro == null) {
-                fechaReferencia = conteoPorDia.entrySet().stream()
-                        .max(Map.Entry.comparingByValue())
-                        .map(Map.Entry::getKey)
-                        .orElseThrow(() -> new IllegalStateException("No hay días con envíos"));
-            } else {
-                // fechaReferencia ya calculado arriba para fechaEnviosDia > 0
-                if (fechaReferencia == null) {
-                    fechaReferencia = fechaEnviosFiltro;
-                    if (!conteoPorDia.containsKey(fechaReferencia)) {
-                        throw new IllegalArgumentException(
-                                "No hay envíos para la fecha seleccionada: " + fechaEnviosFiltro);
-                    }
-                }
+        } else if (fechaEnviosFiltro != null) {
+            // Fecha específica: escanear para obtener conteo real
+            conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
+                    resolverCarpetaEnvios(dataDir), aeropuertos
+            );
+            int conteo = conteoPorDia.getOrDefault(fechaEnviosFiltro, 0);
+            if (conteo == 0) {
+                throw new IllegalArgumentException("No hay envíos para la fecha: " + fechaEnviosFiltro);
             }
-            fechasNecesarias.add(fechaReferencia);
-
-            int conteo = fechaEnviosDia > 0 ? 500 : conteoPorDia.getOrDefault(fechaReferencia, 0);
             nivelesObjetivo = List.of(conteo);
-        } else {
-            GeneradorNivelesCarga generadorNiveles = new GeneradorNivelesCarga(capacidadMaximaEnviosDiaria);
-            nivelesObjetivo = generadorNiveles.generarNivelesDefecto();
-
-            List<DiaConDiferencia> candidatos = conteoPorDia.entrySet().stream()
-                    .map(e -> new DiaConDiferencia(e.getKey(), e.getValue()))
-                    .sorted(Comparator.comparingInt(DiaConDiferencia::getCount).reversed())
-                    .toList();
-
-            for (int nivel : nivelesObjetivo) {
-                DiaConDiferencia mejor = null;
-                int menorDif = Integer.MAX_VALUE;
-                for (DiaConDiferencia dc : candidatos) {
-                    int dif = Math.abs(dc.count - nivel);
-                    if (dif < menorDif) {
-                        menorDif = dif;
-                        mejor = dc;
-                    }
-                }
-                if (mejor != null) {
-                    fechasNecesarias.add(mejor.fecha);
-                }
+        } else if (usarDiaMaximoEnvios) {
+            // Día máximo: ya encontrado en Paso 1
+            int conteo = conteoPorDia.getOrDefault(fechaReferencia, 0);
+            nivelesObjetivo = List.of(conteo);
+        } else if (fechaEnviosDia > 0 && duracionEnvios > 0) {
+            // Rango por índice: escanear para obtener conteo real
+            conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
+                    resolverCarpetaEnvios(dataDir), aeropuertos
+            );
+            int conteoTotal = 0;
+            for (LocalDate f : fechasNecesarias) {
+                conteoTotal += conteoPorDia.getOrDefault(f, 0);
             }
+            nivelesObjetivo = List.of(Math.max(1, conteoTotal));
+        } else if (fechaEnviosDia > 0) {
+            // Día único por índice: escanear para obtener conteo real
+            conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
+                    resolverCarpetaEnvios(dataDir), aeropuertos
+            );
+            int conteo = conteoPorDia.getOrDefault(fechaReferencia, 0);
+            nivelesObjetivo = List.of(Math.max(1, conteo));
+        } else {
+            // Inalcanzable: Main siempre activa usarDiaMaximoEnvios=true como fallback
+            throw new IllegalStateException("Debe especificarse una fecha, rango, índice o usar día máximo");
         }
 
         // Paso 3: Determinar ventana efectiva de vuelos centrada en las fechas de envio
@@ -263,10 +249,19 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
                 // Rango explícito: ventana desde minFecha - 2 hasta maxFecha + diasVuelos
                 fechaInicioEfectiva = minFecha.minusDays(2);
                 diasVuelosEfectivos = diasVuelos + 2;
-            } else if (fechaEnviosDia > 0) {
-                // Ventana: desde minFecha - 2 hasta maxFecha + diasVuelos
-                fechaInicioEfectiva = minFecha.minusDays(2);
+            } else if (fechaEnviosFiltro != null) {
+                // Fecha específica: ventana centrada en esa fecha
+                fechaInicioEfectiva = fechaEnviosFiltro.minusDays(2);
                 diasVuelosEfectivos = diasVuelos + 2;
+            } else if (usarDiaMaximoEnvios) {
+                // Día máximo: ventana centrada en ese día
+                fechaInicioEfectiva = fechaReferencia.minusDays(2);
+                diasVuelosEfectivos = diasVuelos + 2;
+            } else if (fechaEnviosDia > 0) {
+                // Rango por índice: ventana que cubra todo el rango
+                long diasRango = ChronoUnit.DAYS.between(minFecha, maxFecha) + 1;
+                fechaInicioEfectiva = minFecha.minusDays(2);
+                diasVuelosEfectivos = (int) Math.max(diasVuelos + 2, diasRango + 2);
             } else {
                 // Comportamiento original para múltiples fechas
                 long buffer = configHorizonteDias();
@@ -320,7 +315,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
 
         DistribucionEnviosPorDia.DiaSeleccionado diaUnico = null;
         if (fechaEnviosRangoInicio != null && fechaEnviosRangoFin != null) {
-            // Rango explícito: usar TODOS los paquetes del rango completo
+            // Rango explícito con fechas reales: usar TODOS los paquetes del rango completo
             List<Paquete> paquetesRango = new ArrayList<>();
             for (LocalDate f : fechasNecesarias) {
                 paquetesRango.addAll(distribucionEnvios.obtenerEnviosDia(f));
@@ -334,9 +329,57 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                     paquetesRango.size(),
                     0
             );
-            System.out.println(String.format(Locale.ROOT,
-                    "  [RANGO] %s a %s: %d paquetes cargados",
-                    fechaEnviosRangoInicio, fechaEnviosRangoFin, paquetesRango.size()));
+        } else if (fechaEnviosFiltro != null) {
+            // Fecha específica: usar TODOS los paquetes de esa fecha
+            List<Paquete> paquetesFecha = distribucionEnvios.obtenerEnviosDia(fechaEnviosFiltro);
+            if (paquetesFecha.isEmpty()) {
+                throw new IllegalArgumentException("No hay envíos para la fecha: " + fechaEnviosFiltro);
+            }
+            diaUnico = new DistribucionEnviosPorDia.DiaSeleccionado(
+                    fechaEnviosFiltro,
+                    paquetesFecha,
+                    paquetesFecha.size(),
+                    0
+            );
+        } else if (usarDiaMaximoEnvios) {
+            // Día máximo: usar TODOS los paquetes de ese día
+            List<Paquete> paquetesDia = distribucionEnvios.obtenerEnviosDia(fechaReferencia);
+            if (paquetesDia.isEmpty()) {
+                throw new IllegalArgumentException("No hay envíos para el día máximo: " + fechaReferencia);
+            }
+            diaUnico = new DistribucionEnviosPorDia.DiaSeleccionado(
+                    fechaReferencia,
+                    paquetesDia,
+                    paquetesDia.size(),
+                    0
+            );
+        } else if (fechaEnviosDia > 0 && duracionEnvios > 0) {
+            // Rango por índice: usar TODOS los paquetes del rango completo
+            List<Paquete> paquetesRango = new ArrayList<>();
+            for (LocalDate f : fechasNecesarias) {
+                paquetesRango.addAll(distribucionEnvios.obtenerEnviosDia(f));
+            }
+            if (paquetesRango.isEmpty()) {
+                throw new IllegalArgumentException("No hay envíos para el rango de días " + fechaEnviosDia + "-" + (fechaEnviosDia + duracionEnvios - 1));
+            }
+            diaUnico = new DistribucionEnviosPorDia.DiaSeleccionado(
+                    fechaReferencia,
+                    paquetesRango,
+                    paquetesRango.size(),
+                    0
+            );
+        } else if (fechaEnviosDia > 0) {
+            // Día único por índice
+            List<Paquete> paquetesDia = distribucionEnvios.obtenerEnviosDia(fechaReferencia);
+            if (paquetesDia.isEmpty()) {
+                throw new IllegalArgumentException("No hay envíos para el día " + fechaEnviosDia + " (" + fechaReferencia + ")");
+            }
+            diaUnico = new DistribucionEnviosPorDia.DiaSeleccionado(
+                    fechaReferencia,
+                    paquetesDia,
+                    paquetesDia.size(),
+                    0
+            );
         } else if (fechaReferencia != null) {
             diaUnico = new DistribucionEnviosPorDia.DiaSeleccionado(
                     fechaReferencia,
@@ -362,56 +405,53 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             int totalMaletasDia = paquetesTrabajo.stream().mapToInt(Paquete::getCantidad).sum();
 
             for (AlgorithmSpec algoritmo : algoritmos) {
-                for (int corrida = 1; corrida <= corridasPorAlgoritmo; corrida++) {
-                    long t0 = System.nanoTime();
-                    Solucion solucion = ejecutarAlgoritmo(algoritmo, datasetDia, config);
-                    long duracionMs = (System.nanoTime() - t0) / 1_000_000;
+                long t0 = System.nanoTime();
+                Solucion solucion = ejecutarAlgoritmo(algoritmo, datasetDia, config);
+                long duracionMs = (System.nanoTime() - t0) / 1_000_000;
 
-                    List<ResultadoEnvio> resultados = construirResultadosEnvio(datasetDia, solucion, config);
-                    boolean colapso = ColapsoDetector.hayColapso(resultados);
-                    int totalEnvios = datasetDia.getPaquetes().size();
-                    int asignados = solucion.getRutasAsignadas().size();
+                List<ResultadoEnvio> resultados = construirResultadosEnvio(datasetDia, solucion, config);
+                boolean colapso = ColapsoDetector.hayColapso(resultados);
+                int totalEnvios = datasetDia.getPaquetes().size();
+                int asignados = solucion.getRutasAsignadas().size();
                     int noAsignados = solucion.getPaquetesNoAsignados().size();
-                    int maletasFueraDePlazo = solucion.getMaletasFueraDePlazo();
-                    double porcentajeExito = totalEnvios == 0 ? 0.0 : (100.0 * asignados) / totalEnvios;
+                int maletasFueraDePlazo = solucion.getMaletasFueraDePlazo();
+                double porcentajeExito = totalEnvios == 0 ? 0.0 : (100.0 * asignados) / totalEnvios;
 
-                    if (maletasFueraDePlazo > 0) {
-                        System.out.println("  [DIAG] FUERA DE PLAZO detected: " + maletasFueraDePlazo + " maletas");
-                        diagnosticarPaquetes(datasetDia, solucion, config);
-                    }
-
-                    rawRecords.add(new RunRecord(
-                            algoritmo.name,
-                            totalMaletasDia,
-                            nivelEnvios,
-                            dia.fecha,
-                            dia.cantidad,
-                            corrida,
-                            totalEnvios,
-                            asignados,
-                            noAsignados,
-                            porcentajeExito,
-                            maletasFueraDePlazo,
-                            colapso,
-                            solucion.getCostoTotal(),
-                            duracionMs,
-                            solucion
-                    ));
-
-                    System.out.println(String.format(Locale.ROOT,
-                             "  [%s] asignados=%d/%d fuera_plazo=%d colapso=%s costo=%.0f [%dms]",
-                             algoritmo.name,
-                             asignados, totalEnvios,
-                             maletasFueraDePlazo,
-                             colapso,
-                             solucion.getCostoTotal(),
-                             duracionMs));
-
-
+                if (maletasFueraDePlazo > 0) {
+                    System.out.println("  [DIAG] FUERA DE PLAZO detected: " + maletasFueraDePlazo + " maletas");
+                    diagnosticarPaquetes(datasetDia, solucion, config);
                 }
+
+                rawRecords.add(new RunRecord(
+                        algoritmo.name,
+                        totalMaletasDia,
+                        nivelEnvios,
+                        dia.fecha,
+                        dia.cantidad,
+                        1,
+                        totalEnvios,
+                        asignados,
+                        noAsignados,
+                        porcentajeExito,
+                        maletasFueraDePlazo,
+                        colapso,
+                        solucion.getCostoTotal(),
+                        duracionMs,
+                        solucion
+                ));
+
+                System.out.println(String.format(Locale.ROOT,
+                         "  [%s] asignados=%d/%d fuera_plazo=%d colapso=%s costo=%.0f [%dms]",
+                         algoritmo.name,
+                         asignados, totalEnvios,
+                         maletasFueraDePlazo,
+                         colapso,
+                         solucion.getCostoTotal(),
+                         duracionMs));
+
             }
 
-         }
+        }
 
         ResultTable rawTable = new ResultTable(rawRecords);
         ResultTable summaryTable = rawTable.resumir();
@@ -881,20 +921,6 @@ public List<String> toCsvLines() {
         Path enviosLegacy = base.resolve("_envios_preliminar_");
         if (Files.isDirectory(enviosLegacy)) return enviosLegacy;
         throw new IllegalArgumentException("No se pudo encontrar carpeta de envíos en: " + base);
-    }
-
-    private static final class DiaConDiferencia {
-        final LocalDate fecha;
-        final int count;
-
-        DiaConDiferencia(LocalDate fecha, int count) {
-            this.fecha = fecha;
-            this.count = count;
-        }
-
-        int getCount() {
-            return count;
-        }
     }
 
     private void generarLogJson(Path outputPath, List<RunRecord> records, Dataset dataset, Config_Simulacion config,

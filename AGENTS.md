@@ -47,16 +47,17 @@ cost = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + hor
 | `data/input/aeropuertos/` | UTF-16 LE | File with "Aeropuerto" in name |
 | `data/input/vuelos/planes_vuelo.txt` | UTF-8 | `ID\|origen\|destino\|horario\|capacidad\|...` |
 | `data/input/envios/_envios_XXXX_.txt` | UTF-8 | XXXX = ICAO code |
-| `data/output/` | — | Gitignored; CSV results land here |
+| `data/output/` | — | Gitignored; JSON logs land here |
 
 ## CLI defaults (important)
 
-- `--dias-vuelos=0` → loads **all** flights (~3.1M, ~1095 days). Non-zero limits the window.
-- `--corridas=10` → 10 runs of ALNS **and** 10 runs of ACO. Both always run.
-- `--semilla-alns=17` / `--semilla-aco=17` — same default seed for both.
-- `--fecha-envios` unset → generates 5 load levels (20%-70% of daily max), finds closest historical day for each.
-
-There is **no flag to run only one algorithm**. Always both.
+- `--algoritmo=ALNS` → runs ALNS. Use `--algoritmo=ACO` for ACO. **One algorithm per invocation.**
+- `--dias-vuelos=3` → loads 3 days of flights. `0` loads **all** flights (~3.1M, ~1095 days).
+- `--semilla-alns=17` / `--semilla-aco=17` — default seeds.
+- `--fecha-envios` unset → uses `max` (day with highest shipment count).
+- `--rango-envios=2026-01-01:2026-01-07` → explicit date range (processes all packages in range).
+- `--rango-envios=3-7` → index-based range (days relative to `fechaInicioVuelos`).
+- When `--fecha-envios` or `--rango-envios` is used without `--dias-vuelos`, the flight window is auto-calculated to 3 days.
 
 ## Adding a new metaheuristic
 
@@ -72,4 +73,5 @@ There is **no flag to run only one algorithm**. Always both.
 - `src/tasf/examples/` is **deprecated** — no longer part of the project.
 - `target/` directory contains old compiled classes from a previous setup. Use `out/` only.
 - Airport file is UTF-16 LE; all other input files are UTF-8. Wrong encoding = silent parse failures.
-- `StandardExperimentPipeline` writes CSVs with timestamps — old results are not overwritten.
+- `StandardExperimentPipeline` writes JSON logs with timestamps — old results are not overwritten.
+- Package dates in text files are **local time** at the origin airport; they are converted to UTC during loading. Filtering by date uses UTC dates.
