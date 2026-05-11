@@ -41,10 +41,11 @@ Esto hace, en este orden:
 
 1. Lee la CLI y arma el `StandardExperimentPipeline`.
 2. Carga aeropuertos, vuelos y paquetes desde `data/input/`.
-3. Calcula estadísticas diarias de envíos y capacidad.
-4. Ejecuta el algoritmo seleccionado (ALNS por defecto).
-5. Planifica rutas, asigna envíos y evalúa si llegan dentro del plazo.
-6. Escribe un log JSON en `data/output/`.
+3. Escanea la distribución de envíos por día y selecciona el día con más envíos (modo `max` por defecto).
+4. Calcula la ventana efectiva de vuelos centrada en la fecha de envío.
+5. Ejecuta el algoritmo seleccionado (ALNS por defecto).
+6. Planifica rutas, asigna envíos y evalúa si llegan dentro del plazo.
+7. Escribe un log JSON en `data/output/`.
 
 ### 3. Ejecutar (modo personalizado)
 
@@ -66,7 +67,7 @@ java -cp out tasf.app.Main --fecha-envios=2026-01-06
 # Usar el día con más envíos
 java -cp out tasf.app.Main --fecha-envios=max
 
-# Rango de fechas explícito (nuevo)
+# Rango de fechas explícito
 java -cp out tasf.app.Main --rango-envios=2026-01-01:2026-01-07
 
 # Rango por índice numérico
@@ -87,7 +88,7 @@ java -cp out tasf.app.Main \
 |-----------|---------------|-------------|
 | `--data-dir` | `data` | Directorio raíz de datos |
 | `--algoritmo` | `ALNS` | Algoritmo a ejecutar: `ALNS` o `ACO` |
-| `--fecha-inicio-vuelos` | `2026-01-02` | Fecha de inicio de la ventana de vuelos |
+| `--fecha-inicio-vuelos` | `2026-01-01` | Fecha de inicio de la ventana de vuelos |
 | `--dias-vuelos` | `3` | Cantidad de días de vuelos; `0` carga todos (~1095 días) |
 | `--max-envios` | `0` (todos) | Límite de envíos por archivo (0 = sin límite) |
 | `--fecha-envios` | `max` | Día de envíos: índice numérico (`5`), fecha (`2026-01-06`), o `max` |
@@ -172,7 +173,8 @@ El sistema está diseñado para experimentos automatizados, no simulaciones inte
 Cada corrida registra:
 
 - algoritmo
-- fecha seleccionada
+- tipo de selección de fecha (`rango`, `fecha_fija`, `dia_maximo`, `rango_indice`, `dia_indice`)
+- fecha seleccionada (adaptada al modo: rango completo, día específico, etc.)
 - paquetes asignados / no asignados
 - porcentaje de éxito
 - maletas fuera de plazo
@@ -180,7 +182,13 @@ Cada corrida registra:
 - costo total
 - tiempo de ejecución
 
-Los logs JSON quedan en `data/output/` con nombre `log_YYYYMMDD_HHMMSS.json`.
+Los logs JSON quedan en `data/output/` con nombre `log_YYYYMMDD_HHMMSS.json` e incluyen:
+
+- **metadata**: resumen de la corrida con algoritmo, fechas, métricas
+- **escaneo**: información del escaneo de días (solo en modo `dia_maximo`)
+- **configuracion**: parámetros adaptativos usados (iteraciones, hormigas, etc.)
+- **diagnosticoFueraDePlazo**: detalle de cada paquete fuera de plazo con ruta completa
+- **asignaciones**: lista de paquetes asignados con su ruta y vuelos
 
 ---
 
@@ -189,7 +197,6 @@ Los logs JSON quedan en `data/output/` con nombre `log_YYYYMMDD_HHMMSS.json`.
 - [data/README.md](data/README.md)
 - [ARQUITECTURA_DOS_FASES.md](ARQUITECTURA_DOS_FASES.md)
 - [IMPLEMENTACION_DOS_FASES.md](IMPLEMENTACION_DOS_FASES.md)
-- [GUIA_DISTRIBUCION_ENVIOS.md](GUIA_DISTRIBUCION_ENVIOS.md)
 
 ---
 
@@ -220,7 +227,6 @@ La función objetivo global vive en `PlanificacionUtils.evaluarAsignacion(...)`.
 ## Contacto y soporte
 
 - Arquitectura: `ARQUITECTURA_DOS_FASES.md`
-- Utilidades: `GUIA_*.md`
 - Datos: `data/README.md`
 
 **Nota**: La carpeta `src/tasf/examples/` ya no forma parte del proyecto.

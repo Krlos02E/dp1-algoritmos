@@ -25,10 +25,6 @@ public class Ruta {
         return vuelos;
     }
 
-    public boolean isVacia() {
-        return vuelos.isEmpty();
-    }
-
     public LocalDateTime getSalidaUtc() {
         return vuelos.get(0).getSalidaUtc();
     }

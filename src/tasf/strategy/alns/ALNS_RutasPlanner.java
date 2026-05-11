@@ -40,11 +40,4 @@ public class ALNS_RutasPlanner implements PlanificadorRutasStrategy {
         Solucion solucion = delegate.planificar(datos, config);
         return new HashMap<>(solucion.getRutasAsignadas());
     }
-
-    /**
-     * Getter del delegado para acceso a capacidades avanzadas.
-     */
-    public ALNS_Strategy getDelegate() {
-        return delegate;
-    }
 }

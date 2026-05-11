@@ -99,6 +99,42 @@ public class EstadoOperacional {
         return cargaPorVuelo.getOrDefault(vueloId, 0);
     }
 
+    public boolean puedeReservarRuta(
+            Paquete paquete,
+            Ruta ruta,
+            LocalDateTime creacionUtc,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        Aeropuerto aeropuertoActual = datos.getAeropuerto(paquete.getOrigenOACI());
+        if (aeropuertoActual == null) {
+            aeropuertoActual = datos.getAeropuerto(config.getAeropuertoHub());
+        }
+        if (aeropuertoActual == null) return false;
+
+        LocalDateTime instanteActual = creacionUtc;
+        List<Vuelo> vuelos = ruta.getVuelos();
+        if (vuelos.isEmpty()) return false;
+
+        Duration conexionMinima = config.getMinimaConexion();
+        for (int i = 0; i < vuelos.size(); i++) {
+            Vuelo vuelo = vuelos.get(i);
+            if (!vuelo.getOrigen().getCodigoOACI().equals(aeropuertoActual.getCodigoOACI())) return false;
+
+            LocalDateTime salida = vuelo.getSalidaUtc();
+            Duration esperaRequerida = i == 0 ? Duration.ZERO : conexionMinima;
+            if (salida.isBefore(instanteActual.plus(esperaRequerida))) return false;
+
+            if (!puedeReservarIntervalo(aeropuertoActual, instanteActual, salida, paquete.getCantidad())) return false;
+            if (!puedeReservarVuelo(vuelo, paquete.getCantidad())) return false;
+
+            aeropuertoActual = vuelo.getDestino();
+            instanteActual = vuelo.getLlegadaUtc();
+        }
+
+        return aeropuertoActual.getCodigoOACI().equals(paquete.getDestinoOACI());
+    }
+
     public boolean reservarRutaSiFactible(
             Paquete paquete,
             Ruta ruta,
@@ -120,16 +156,6 @@ public class EstadoOperacional {
             return false;
         }
 
-        LocalDateTime finSimulacionExclusivo = config.getFinSimulacionUtcExclusivo();
-        if (finSimulacionExclusivo != null) {
-            if (!creacionUtc.isBefore(finSimulacionExclusivo)) {
-                return false;
-            }
-            if (!ruta.getLlegadaUtc().isBefore(finSimulacionExclusivo)) {
-                return false;
-            }
-        }
-
         Duration conexionMinima = config.getMinimaConexion();
 
         for (int i = 0; i < vuelos.size(); i++) {
@@ -141,12 +167,6 @@ public class EstadoOperacional {
             LocalDateTime salida = vuelo.getSalidaUtc();
             Duration esperaRequerida = i == 0 ? Duration.ZERO : conexionMinima;
             if (salida.isBefore(instanteActual.plus(esperaRequerida))) {
-                return false;
-            }
-            if (finSimulacionExclusivo != null && !salida.isBefore(finSimulacionExclusivo)) {
-                return false;
-            }
-            if (finSimulacionExclusivo != null && !vuelo.getLlegadaUtc().isBefore(finSimulacionExclusivo)) {
                 return false;
             }
 
@@ -181,57 +201,5 @@ public class EstadoOperacional {
         }
 
         return true;
-    }
-
-    /** Liberar una ruta previamente reservada (inverso de reservarRutaSiFactible) */
-    public void liberarRuta(
-            Paquete paquete,
-            Ruta ruta,
-            LocalDateTime creacionUtc,
-            Dataset datos,
-            Config_Simulacion config
-    ) {
-        Aeropuerto aeropuertoActual = datos.getAeropuerto(paquete.getOrigenOACI());
-        if (aeropuertoActual == null) {
-            aeropuertoActual = datos.getAeropuerto(config.getAeropuertoHub());
-        }
-        if (aeropuertoActual == null) return;
-
-        LocalDateTime instanteActual = creacionUtc;
-        int cantidad = paquete.getCantidad();
-
-        for (Vuelo vuelo : ruta.getVuelos()) {
-            liberarIntervalo(aeropuertoActual, instanteActual, vuelo.getSalidaUtc(), cantidad);
-            liberarVuelo(vuelo, cantidad);
-            aeropuertoActual = vuelo.getDestino();
-            instanteActual = vuelo.getLlegadaUtc();
-        }
-    }
-
-    private void liberarIntervalo(
-            Aeropuerto aeropuerto,
-            LocalDateTime inicioIncl,
-            LocalDateTime finExcl,
-            int cantidad
-    ) {
-        if (!finExcl.isAfter(inicioIncl)) return;
-
-        Map<LocalDateTime, Integer> horas =
-                ocupacionAeropuertoPorHora.computeIfAbsent(aeropuerto.getCodigoOACI(), k -> new HashMap<>());
-
-        LocalDateTime hora = inicioIncl.truncatedTo(ChronoUnit.HOURS);
-        while (hora.isBefore(finExcl)) {
-            horas.merge(hora, -cantidad, Integer::sum);
-            if (horas.get(hora) <= 0) horas.remove(hora);
-            hora = hora.plusHours(1);
-        }
-    }
-
-    private void liberarVuelo(Vuelo vuelo, int cantidad) {
-        String id = vuelo.getId();
-        int actual = cargaPorVuelo.getOrDefault(id, 0);
-        int nuevo = Math.max(0, actual - cantidad);
-        if (nuevo == 0) cargaPorVuelo.remove(id);
-        else cargaPorVuelo.put(id, nuevo);
     }
 }

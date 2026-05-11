@@ -47,10 +47,9 @@ public class ALNS_Strategy implements PlanificadorStrategy {
 
     @Override
     public Solucion planificar(Dataset datos, Config_Simulacion config) {
-RouteFinder finder = new RouteFinder(datos);
+        RouteFinder finder = new RouteFinder(datos);
         Map<String, List<Ruta>> candidatos = PlanificacionUtils.construirCandidatosRutas(datos, config, finder);
 
-        // Optimización: Solo construir solución inicial greedy (reverso eliminado)
         Map<String, Ruta> propuestaNormal = construirInicialGreedy(datos, config, candidatos);
         Solucion solucionActual = PlanificacionUtils.evaluarAsignacion("ALNS", propuestaNormal, datos, config);
         Map<String, Ruta> propuestaMejor = new HashMap<>(propuestaNormal);
@@ -58,11 +57,11 @@ RouteFinder finder = new RouteFinder(datos);
 
         Map<String, Ruta> propuestaActual = new HashMap<>(propuestaNormal);
 
-        // Optimización: 10 iteraciones (en vez de 20), evaluar cada 5
-double temperatura = Math.max(1.0, solucionActual.getCostoTotal() * 0.05);
+        // Optimización: evaluar cada 10 iteraciones, parar tras 5 sin mejora
+        double temperatura = Math.max(1.0, solucionActual.getCostoTotal() * 0.05);
         int sinMejora = 0;
-        final int MAX_SIN_MEJORA = 3;
-        final int EVAL_CADA = 5;
+        final int MAX_SIN_MEJORA = 5;
+        final int EVAL_CADA = 10;
 
         for (int iter = 1; iter <= Math.max(1, config.getIteracionesALNS()); iter++) {
             int opR = seleccionarPorRuleta(pesosRuptura);
@@ -138,7 +137,6 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
         EstadoOperacional estado = new EstadoOperacional();
         List<Paquete> paquetes = new ArrayList<>(datos.getPaquetes());
         paquetes.sort((a, b) -> {
-            // PRIORIZAR por deadline más cercano (más urgente)
             LocalDateTime deadlineA = PlanificacionUtils.getCreacionUtc(a, datos, config)
                     .plus(PlanificacionUtils.getPlazoObjetivo(a, datos, config));
             LocalDateTime deadlineB = PlanificacionUtils.getCreacionUtc(b, datos, config)
@@ -153,26 +151,34 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
             Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
             LocalDateTime deadline = creacion.plus(plazo);
 
-            // FILTRAR: solo rutas dentro del deadline
             List<Ruta> rutasValidas = new ArrayList<>();
+            List<Ruta> rutasFallback = new ArrayList<>();
             for (Ruta r : rutas) {
                 if (!r.getLlegadaUtc().isAfter(deadline)) {
                     rutasValidas.add(r);
+                } else {
+                    rutasFallback.add(r);
                 }
             }
 
-            if (rutasValidas.isEmpty()) continue;
+            if (rutasValidas.isEmpty() && rutasFallback.isEmpty()) continue;
 
-            // PRIMERO: intentar asignar rutas DENTRO del deadline
+            List<Ruta> aEvaluar = rutasValidas.isEmpty() ? rutasFallback : rutasValidas;
+
+            // Pre-filtrar: evaluar sin estado (rápido) y tomar las mejores 5
+            aEvaluar.sort((r1, r2) -> Double.compare(
+                    PlanificacionUtils.evaluarRutaIndividual(p, r1, datos, config),
+                    PlanificacionUtils.evaluarRutaIndividual(p, r2, datos, config)));
+            int maxEval = Math.min(5, aEvaluar.size());
+
             Ruta mejor = null;
             double mejorScore = Double.POSITIVE_INFINITY;
-            for (Ruta r : rutasValidas) {
-                EstadoOperacional prueba = estado.copia();
-                if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
-                double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
+            for (int i = 0; i < maxEval; i++) {
+                Ruta r = aEvaluar.get(i);
+                if (!estado.puedeReservarRuta(p, r, creacion, datos, config)) continue;
+                double score = PlanificacionUtils.evaluarRutaIndividualLight(p, r, estado, datos, config);
                 if (score < mejorScore) { mejorScore = score; mejor = r; }
             }
-            // Si no hay ruta dentro del deadline, NO asignar nada (esperar a reparación)
             if (mejor == null) continue;
             estado.reservarRutaSiFactible(p, mejor, creacion, datos, config);
             propuesta.put(p.getId(), mejor);
@@ -333,22 +339,32 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
             LocalDateTime deadline = creacion.plus(plazo);
             List<Ruta> rutas = candidatos.getOrDefault(id, EMPTY_RUTA_LIST);
 
-            // FILTRAR: solo rutas dentro del deadline
             List<Ruta> rutasValidas = new ArrayList<>();
+            List<Ruta> rutasFallback = new ArrayList<>();
             for (Ruta r : rutas) {
                 if (!r.getLlegadaUtc().isAfter(deadline)) {
                     rutasValidas.add(r);
+                } else {
+                    rutasFallback.add(r);
                 }
             }
 
-            if (rutasValidas.isEmpty()) continue;
+            if (rutasValidas.isEmpty() && rutasFallback.isEmpty()) continue;
+
+            List<Ruta> aEvaluar = rutasValidas.isEmpty() ? rutasFallback : rutasValidas;
+
+            // Pre-filtrar: evaluar sin estado (rápido) y tomar las mejores 5
+            aEvaluar.sort((r1, r2) -> Double.compare(
+                    PlanificacionUtils.evaluarRutaIndividual(p, r1, datos, config),
+                    PlanificacionUtils.evaluarRutaIndividual(p, r2, datos, config)));
+            int maxEval = Math.min(5, aEvaluar.size());
 
             Ruta mejor = null;
             double mejorScore = Double.POSITIVE_INFINITY;
-            for (Ruta r : rutasValidas) {
-                EstadoOperacional prueba = estado.copia();
-                if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
-                double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
+            for (int i = 0; i < maxEval; i++) {
+                Ruta r = aEvaluar.get(i);
+                if (!estado.puedeReservarRuta(p, r, creacion, datos, config)) continue;
+                double score = PlanificacionUtils.evaluarRutaIndividualLight(p, r, estado, datos, config);
                 if (score < mejorScore) { mejorScore = score; mejor = r; }
             }
             if (mejor != null) {
@@ -365,6 +381,8 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
         while (!pendientes.isEmpty()) {
             String mejorId = null;
             double mejorRegret = Double.NEGATIVE_INFINITY;
+            Ruta mejorRutaParaMejorId = null;
+            double mejorScoreParaMejorId = Double.POSITIVE_INFINITY;
 
             for (String id : pendientes) {
                 Paquete p = datos.getPaquetePorId(id);
@@ -374,59 +392,51 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
                 LocalDateTime deadline = creacion.plus(plazo);
                 List<Ruta> rutas = candidatos.getOrDefault(id, EMPTY_RUTA_LIST);
 
-// FILTRAR: solo rutas dentro del deadline
-            List<Ruta> rutasValidas = new ArrayList<>();
-            for (Ruta r : rutas) {
-                if (!r.getLlegadaUtc().isAfter(deadline)) {
-                    rutasValidas.add(r);
+                List<Ruta> rutasValidas = new ArrayList<>();
+                List<Ruta> rutasFallback = new ArrayList<>();
+                for (Ruta r : rutas) {
+                    if (!r.getLlegadaUtc().isAfter(deadline)) {
+                        rutasValidas.add(r);
+                    } else {
+                        rutasFallback.add(r);
+                    }
                 }
-            }
 
-                if (rutasValidas.isEmpty()) continue;
+                if (rutasValidas.isEmpty() && rutasFallback.isEmpty()) continue;
+
+                List<Ruta> aEvaluar = rutasValidas.isEmpty() ? rutasFallback : rutasValidas;
+
+                // Pre-filtrar: evaluar sin estado (rápido) y tomar las mejores 10
+                aEvaluar.sort((r1, r2) -> Double.compare(
+                        PlanificacionUtils.evaluarRutaIndividual(p, r1, datos, config),
+                        PlanificacionUtils.evaluarRutaIndividual(p, r2, datos, config)));
+                int maxEval = Math.min(10, aEvaluar.size());
 
                 double best = Double.POSITIVE_INFINITY, second = Double.POSITIVE_INFINITY;
-                for (Ruta r : rutasValidas) {
-                    EstadoOperacional prueba = estado.copia();
-                    if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
-                    double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
-                    if (score < best) { second = best; best = score; }
+                Ruta bestRuta = null;
+                for (int i = 0; i < maxEval; i++) {
+                    Ruta r = aEvaluar.get(i);
+                    if (!estado.puedeReservarRuta(p, r, creacion, datos, config)) continue;
+                    double score = PlanificacionUtils.evaluarRutaIndividualLight(p, r, estado, datos, config);
+                    if (score < best) { second = best; best = score; bestRuta = r; }
                     else if (score < second) { second = score; }
                 }
                 if (best == Double.POSITIVE_INFINITY) continue;
                 if (second == Double.POSITIVE_INFINITY) second = best + 500.0;
                 double regret = second - best;
-                if (regret > mejorRegret) { mejorRegret = regret; mejorId = id; }
+                if (regret > mejorRegret) {
+                    mejorRegret = regret;
+                    mejorId = id;
+                    mejorRutaParaMejorId = bestRuta;
+                    mejorScoreParaMejorId = best;
+                }
             }
             if (mejorId == null) break;
 
             Paquete p = datos.getPaquetePorId(mejorId);
             LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
-            Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
-            LocalDateTime deadline = creacion.plus(plazo);
-            List<Ruta> rutas = candidatos.getOrDefault(mejorId, EMPTY_RUTA_LIST);
-
-            // FILTRAR: STRICTO solo rutas dentro del deadline
-            List<Ruta> rutasValidas = new ArrayList<>();
-            for (Ruta r : rutas) {
-                if (!r.getLlegadaUtc().isAfter(deadline)) {
-                    rutasValidas.add(r);
-                }
-            }
-
-            if (rutasValidas.isEmpty()) continue;
-
-            Ruta mejor = null;
-            double mejorScore = Double.POSITIVE_INFINITY;
-            for (Ruta r : rutasValidas) {
-                EstadoOperacional prueba = estado.copia();
-                if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
-                double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
-                if (score < mejorScore) { mejorScore = score; mejor = r; }
-            }
-            if (mejor != null) {
-                estado.reservarRutaSiFactible(p, mejor, creacion, datos, config);
-                propuesta.put(mejorId, mejor);
-            }
+            estado.reservarRutaSiFactible(p, mejorRutaParaMejorId, creacion, datos, config);
+            propuesta.put(mejorId, mejorRutaParaMejorId);
             pendientes.remove(mejorId);
         }
     }
@@ -460,13 +470,36 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
         for (Paquete p : sinRuta.subList(0, limite)) {
             if (propuesta.containsKey(p.getId())) continue;
             LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
+            LocalDateTime deadline = creacion.plus(plazo);
             List<Ruta> rutas = candidatos.getOrDefault(p.getId(), EMPTY_RUTA_LIST);
+
+            List<Ruta> rutasValidas = new ArrayList<>();
+            List<Ruta> rutasFallback = new ArrayList<>();
+            for (Ruta r : rutas) {
+                if (!r.getLlegadaUtc().isAfter(deadline)) {
+                    rutasValidas.add(r);
+                } else {
+                    rutasFallback.add(r);
+                }
+            }
+
+            if (rutasValidas.isEmpty() && rutasFallback.isEmpty()) continue;
+
+            List<Ruta> aEvaluar = rutasValidas.isEmpty() ? rutasFallback : rutasValidas;
+
+            // Pre-filtrar: evaluar sin estado (rápido) y tomar las mejores 10
+            aEvaluar.sort((r1, r2) -> Double.compare(
+                    PlanificacionUtils.evaluarRutaIndividual(p, r1, datos, config),
+                    PlanificacionUtils.evaluarRutaIndividual(p, r2, datos, config)));
+            int maxEval = Math.min(10, aEvaluar.size());
+
             Ruta mejor = null;
             double mejorScore = Double.POSITIVE_INFINITY;
-            for (Ruta r : rutas) {
-                EstadoOperacional prueba = estado.copia();
-                if (!prueba.reservarRutaSiFactible(p, r, creacion, datos, config)) continue;
-                double score = PlanificacionUtils.evaluarRutaIndividual(p, r, estado, datos, config);
+            for (int i = 0; i < maxEval; i++) {
+                Ruta r = aEvaluar.get(i);
+                if (!estado.puedeReservarRuta(p, r, creacion, datos, config)) continue;
+                double score = PlanificacionUtils.evaluarRutaIndividualLight(p, r, estado, datos, config);
                 if (score < mejorScore) { mejorScore = score; mejor = r; }
             }
             if (mejor != null) {
@@ -532,7 +565,6 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
         EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
         int mejorados = 0;
 
-        // PRIORIZAR paquetes por deadline más cercano
         List<Paquete> paquetesConProblema = new ArrayList<>();
         for (Paquete p : datos.getPaquetes()) {
             Ruta r = propuesta.get(p.getId());
@@ -563,8 +595,7 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
             List<Ruta> alternativas = candidatos.getOrDefault(p.getId(), EMPTY_RUTA_LIST);
             for (Ruta alt : alternativas) {
                 if (alt.getLlegadaUtc().isAfter(deadline)) continue;
-                EstadoOperacional prueba = estado.copia();
-                if (prueba.reservarRutaSiFactible(p, alt, creacion, datos, config)) {
+                if (estado.puedeReservarRuta(p, alt, creacion, datos, config)) {
                     estado.reservarRutaSiFactible(p, alt, creacion, datos, config);
                     propuesta.put(p.getId(), alt);
                     mejorados++;
@@ -597,13 +628,10 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
             LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
             LocalDateTime deadline = creacion.plus(PlanificacionUtils.getPlazoObjetivo(p, datos, config));
 
-            // STRICTO: solo mantener rutas que lleguen ANTES del deadline
-            if (!r.getLlegadaUtc().isAfter(deadline)) {
-                resultado.put(p.getId(), r);
-            }
+            // Mantener ruta aunque esté fuera de plazo: mejor tarde que nunca
+            resultado.put(p.getId(), r);
         }
 
-        // System.out.println("  [ALNS] eliminarFueraPlazo: " + eliminados + " rutas eliminadas por llegar tarde");
         return resultado;
     }
 }

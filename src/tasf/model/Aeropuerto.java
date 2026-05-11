@@ -3,23 +3,18 @@ package tasf.model;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
-import java.util.Map;
 
 public class Aeropuerto {
     private final String codigoOACI;
     private final Continente continente;
     private final int gmtOffsetMinutos;
     private final int capacidadMaxima;
-    private final Map<LocalDateTime, Integer> flujoPorHoraUTC;
 
     public Aeropuerto(String codigoOACI, Continente continente, int gmtOffsetMinutos, int capacidadMaxima) {
         this.codigoOACI = codigoOACI;
         this.continente = continente;
         this.gmtOffsetMinutos = gmtOffsetMinutos;
         this.capacidadMaxima = capacidadMaxima;
-        this.flujoPorHoraUTC = new HashMap<>();
     }
 
     public String getCodigoOACI() {
@@ -41,30 +36,5 @@ public class Aeropuerto {
     public LocalDateTime convertirLocalAUTC(LocalDate fechaLocal, LocalTime horaLocal) {
         LocalDateTime instanteLocal = LocalDateTime.of(fechaLocal, horaLocal);
         return instanteLocal.minusMinutes(gmtOffsetMinutos);
-    }
-
-    public synchronized boolean controlarFlujoMaletasPorHora(LocalDateTime instanteUtc, int variacionMaletas) {
-        LocalDateTime hora = instanteUtc.truncatedTo(ChronoUnit.HOURS);
-        int actual = flujoPorHoraUTC.getOrDefault(hora, 0);
-        int nuevo = actual + variacionMaletas;
-
-        if (nuevo < 0) {
-            throw new IllegalStateException("No puede existir flujo negativo en " + codigoOACI);
-        }
-        if (nuevo > capacidadMaxima) {
-            return false;
-        }
-
-        flujoPorHoraUTC.put(hora, nuevo);
-        return true;
-    }
-
-    public synchronized int getFlujoPorHoraUTC(LocalDateTime instanteUtc) {
-        LocalDateTime hora = instanteUtc.truncatedTo(ChronoUnit.HOURS);
-        return flujoPorHoraUTC.getOrDefault(hora, 0);
-    }
-
-    public synchronized void limpiarFlujo() {
-        flujoPorHoraUTC.clear();
     }
 }

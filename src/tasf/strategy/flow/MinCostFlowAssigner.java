@@ -103,7 +103,7 @@ public class MinCostFlowAssigner {
         for (Ruta ruta : rutasAPriorizar) {
             EstadoOperacional prueba = estado.copia();
             if (prueba.reservarRutaSiFactible(paquete, ruta, creacionUtc, datos, config)) {
-                double score = PlanificacionUtils.evaluarRutaIndividual(paquete, ruta, estado, datos, config);
+                double score = PlanificacionUtils.evaluarRutaIndividualLight(paquete, ruta, estado, datos, config);
                 if (score < mejorScore) {
                     mejorScore = score;
                     mejorRuta = ruta;
@@ -181,16 +181,5 @@ public class MinCostFlowAssigner {
             candidatos.put(p.getId(), filtradas);
         }
         return candidatos;
-    }
-
-    /**
-     * Alias orientado a la interfaz Strategy Asignador.
-     */
-    public Map<String, Ruta> asignar(
-            Map<String, Ruta> rutasPlanificadas,
-            Dataset datos,
-            Config_Simulacion config
-    ) {
-        return asignarEnviosAVuelos(rutasPlanificadas, datos, config);
     }
 }

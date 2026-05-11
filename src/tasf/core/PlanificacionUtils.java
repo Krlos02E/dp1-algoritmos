@@ -65,8 +65,7 @@ public final class PlanificacionUtils {
     }
 
     public static boolean estaFueraDeVentanaSimulacion(Ruta ruta, Config_Simulacion config) {
-        LocalDateTime finExclusivo = config.getFinSimulacionUtcExclusivo();
-        return finExclusivo != null && !ruta.getLlegadaUtc().isBefore(finExclusivo);
+        return false;
     }
 
     public static EstadoOperacional construirEstadoConAsignaciones(
@@ -147,7 +146,6 @@ public final class PlanificacionUtils {
         }
 
         double horasPromedio = entregados == 0 ? 0.0 : horasAcumuladas / entregados;
-        solucion.setHorasPromedioEntrega(horasPromedio);
 
         int noAsignados = solucion.getPaquetesNoAsignados().size();
         double costo =
@@ -214,7 +212,6 @@ public final class PlanificacionUtils {
 
         for (int i = 0; i < vuelos.size(); i++) {
             Vuelo vuelo = vuelos.get(i);
-            // Penalización EXTREMA por espera en aeropuerto (87% de los fallos son por esto)
             LocalDateTime inicioEspera = instante;
             if (inicioEspera.isBefore(vuelo.getSalidaUtc())) {
                 LocalDateTime hora = inicioEspera.truncatedTo(ChronoUnit.HOURS);
@@ -223,24 +220,74 @@ public final class PlanificacionUtils {
                 while (hora.isBefore(fin)) {
                     int ocupacion = estado.getOcupacionHora(aeropuertoActual.getCodigoOACI(), hora);
                     double ratio = (double) ocupacion / Math.max(1, capAeropuerto);
-                    // Penalización EXPONENCIAL por congestión (5^ratio)
                     if (ratio > 0.8) costo += Math.pow(5, ratio * 10) * cantidad;
-                    // Penalización CÚBICA × cantidad × horas de espera
                     costo += Math.pow(ratio, 3) * 500000.0 * cantidad;
                     hora = hora.plusHours(1);
                 }
-                // Penalización adicional LINEAL por duración de espera
                 costo += horasEspera * 10000.0 * cantidad;
             }
 
-            // Penalizacion por carga del vuelo (exponencial: ratio^4, muy agresivo)
             int cargaActual = estado.getCargaVuelo(vuelo.getId());
             double ratioVuelo = (double) cargaActual / Math.max(1, vuelo.getCapacidadCarga());
             costo += Math.pow(ratioVuelo, 4) * 50000.0 * cantidad;
 
-            // Avanzar al siguiente punto
             aeropuertoActual = vuelo.getDestino();
             instante = vuelo.getLlegadaUtc();
+        }
+
+        return costo;
+    }
+
+    /**
+     * Versión ligera para búsqueda de rutas alternativas.
+     * Solo verifica factibilidad sin penalización de congestión detallada.
+     * Mucho más rápida para uso en bucles internos.
+     */
+    public static double evaluarRutaIndividualLight(
+            Paquete paquete,
+            Ruta ruta,
+            EstadoOperacional estado,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        if (ruta == null) return 10000.0;
+        if (estaFueraDeVentanaSimulacion(ruta, config)) return 10000.0;
+
+        LocalDateTime creacion = getCreacionUtc(paquete, datos, config);
+        LocalDateTime limite = creacion.plus(getPlazoObjetivo(paquete, datos, config));
+        double tardanzaMin = Math.max(0, Duration.between(limite, ruta.getLlegadaUtc()).toMinutes());
+        double costoTardanza = tardanzaMin * 50.0;
+        double costoEscalas = ruta.getCantidadSaltos() * 200.0;
+        double horasRuta = ruta.getHorasTotalesDesde(creacion);
+
+        double costo = costoTardanza + costoEscalas + horasRuta;
+
+        if (estado != null) {
+            int cantidad = paquete.getCantidad();
+            Aeropuerto aeropuertoActual = datos.getAeropuerto(paquete.getOrigenOACI());
+            if (aeropuertoActual == null) {
+                aeropuertoActual = datos.getAeropuerto(config.getAeropuertoHub());
+            }
+            if (aeropuertoActual == null) return costo;
+            int capAeropuerto = aeropuertoActual.getCapacidadMaxima();
+            LocalDateTime instante = creacion;
+            List<Vuelo> vuelos = ruta.getVuelos();
+
+            for (Vuelo vuelo : vuelos) {
+                long horasEspera = Duration.between(instante, vuelo.getSalidaUtc()).toHours();
+                if (horasEspera > 0) {
+                    int ocupacion = estado.getOcupacionHora(aeropuertoActual.getCodigoOACI(), instante.truncatedTo(ChronoUnit.HOURS));
+                    double ratio = (double) ocupacion / Math.max(1, capAeropuerto);
+                    costo += ratio * 5000.0 * cantidad * horasEspera;
+                }
+
+                int cargaActual = estado.getCargaVuelo(vuelo.getId());
+                double ratioVuelo = (double) cargaActual / Math.max(1, vuelo.getCapacidadCarga());
+                costo += ratioVuelo * 5000.0 * cantidad;
+
+                aeropuertoActual = vuelo.getDestino();
+                instante = vuelo.getLlegadaUtc();
+            }
         }
 
         return costo;
@@ -272,8 +319,8 @@ public final class PlanificacionUtils {
             final int total = paresPendientes.size();
             final long t0 = System.nanoTime();
 
-            // Buscar muchas más rutas que las necesarias: filtrar después por paquete
-            int rutasPorPar = Math.max(config.getMaxRutasPorPaquete() * 20, 500);
+            // Buscar más rutas que las necesarias: filtrar después por paquete
+            int rutasPorPar = Math.max(config.getMaxRutasPorPaquete() * 5, 200);
 
             List<String> paresLista = new ArrayList<>(paresPendientes);
             for (int i = 0; i < paresLista.size(); i++) {
@@ -290,13 +337,6 @@ public final class PlanificacionUtils {
                             config.getMinimaConexion(),
                             config.getHorizonteBusqueda()
                     );
-                    if (config.getFinSimulacionUtcExclusivo() != null) {
-                        List<Ruta> filtradas = new ArrayList<>();
-                        for (Ruta r : rutas) {
-                            if (!estaFueraDeVentanaSimulacion(r, config)) filtradas.add(r);
-                        }
-                        rutas = filtradas;
-                    }
                     CACHE_GLOBAL_RUTAS.put(par, rutas);
 
                     int completados = (idx + 1);
@@ -333,9 +373,7 @@ public final class PlanificacionUtils {
             for (Ruta ruta : cacheadas) {
                 if (ruta.getSalidaUtc().isBefore(creacionUtc)) continue;
                 if (ruta.getSalidaUtc().isAfter(finVentana)) break;
-if (ruta.getLlegadaUtc().isAfter(limiteEntrega)) continue; // Filtro por plazo de entrega
-                if (config.getFinSimulacionUtcExclusivo() != null
-                        && estaFueraDeVentanaSimulacion(ruta, config)) continue;
+                if (ruta.getLlegadaUtc().isAfter(limiteEntrega)) continue;
                 filtradas.add(ruta);
                 if (filtradas.size() >= config.getMaxRutasPorPaquete()) break;
             }

@@ -34,7 +34,7 @@ public interface PlanificadorRutasStrategy {
 Contrato de Fase 1: devuelve una ruta seleccionada por paquete.
 
 #### `PlanificadorStrategy`
-Interfaz interna que usan `ALNS_Strategy` y `ACO_Strategy` para la lógica metaheurística pura.
+Interfaz interna que usan `ALNS_Strategy` y `ACO_Strategy` para la lógica metaheurística pura. Devuelve una `Solucion` completa.
 
 #### `Asignador`
 ```java
@@ -47,23 +47,23 @@ Contrato de Fase 2: valida la ruta ya elegida y la reserva si sigue siendo facti
 ### Implementaciones de la Fase 1
 
 #### `ACO_RutasPlanner`
-- Enlaza `PlanificadorStrategy` con `PlanificadorRutasStrategy`.
+- Implementa `PlanificadorRutasStrategy`.
 - Ejecuta `ACO_Strategy` y expone su solución paquete → ruta.
 
 #### `ALNS_RutasPlanner`
-- Enlaza `PlanificadorStrategy` con `PlanificadorRutasStrategy`.
+- Implementa `PlanificadorRutasStrategy`.
 - Ejecuta `ALNS_Strategy` y expone su solución paquete → ruta.
 
 ### Implementaciones de la Fase 2
 
 #### `MinCostFlowAsignador`
-- Adapta la interfaz `Asignador`.
-- Aplica validación determinística sobre rutas seleccionadas.
+- Implementa la interfaz `Asignador`.
+- Delega en `MinCostFlowAssigner` para la lógica de validación.
 
 #### `MinCostFlowAssigner`
 - Recorre los paquetes en orden temporal.
 - Usa `EstadoOperacional` para verificar capacidad, ocupación y ventana temporal.
-- Acepta o rechaza la ruta completa sin volver a escoger rutas alternativas.
+- Si la ruta seleccionada no es factible, busca rutas alternativas entre candidatas precomputadas.
 
 ### Orquestador de dos fases
 
@@ -180,7 +180,7 @@ La configuración activa del pipeline se concentra en `Main` y `StandardExperime
 |-----------|---------|-------------|
 | `--data-dir` | `data` | Directorio raíz de datos |
 | `--algoritmo` | `ALNS` | `ALNS` o `ACO` |
-| `--fecha-inicio-vuelos` | `2026-01-02` | Fecha de inicio de la ventana de vuelos |
+| `--fecha-inicio-vuelos` | `2026-01-01` | Fecha de inicio de la ventana de vuelos |
 | `--dias-vuelos` | `3` | Días de vuelos; `0` = todos (~1095 días) |
 | `--max-envios` | `0` | Límite de envíos por archivo |
 | `--fecha-envios` | `max` | Índice (`5`), fecha (`2026-01-06`), o `max` |
@@ -210,6 +210,16 @@ El pipeline soporta múltiples modos:
 - **Índice numérico** (`--fecha-envios=5`): día relativo a `fechaInicioVuelos`.
 - **Fecha específica** (`--fecha-envios=2026-01-06`): fecha exacta.
 - **Día máximo** (`--fecha-envios=max`): escanea todos los archivos y selecciona el día con más envíos (default).
+
+### Contenido del log JSON
+
+Cada log generado en `data/output/log_YYYYMMDD_HHMMSS.json` contiene:
+
+- **metadata**: algoritmo, tipo de selección de fecha, fecha seleccionada, métricas de la corrida
+- **escaneo**: días escaneados, tiempo de escaneo, total de envíos (solo en modo `dia_maximo`)
+- **configuracion**: modo adaptativo, iteraciones, hormigas, evaporación, etc.
+- **diagnosticoFueraDePlazo**: detalle de paquetes fuera de plazo con ruta completa (solo si hay)
+- **asignaciones**: lista de paquetes asignados con vuelos y tiempos
 
 ---
 

@@ -77,11 +77,4 @@ public class TwoPhaseOrchestrator {
 
         return solucion;
     }
-
-    /**
-     * Obtiene el nombre del planificador base.
-     */
-    public String getNombrePlanificador() {
-        return planificador.getClass().getSimpleName();
-    }
 }

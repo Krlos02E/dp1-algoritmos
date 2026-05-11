@@ -31,14 +31,15 @@ cost = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + hor
 | Package | Role |
 |---------|------|
 | `tasf.app` | Entry point (`Main`) + CLI parsing |
-| `tasf.core` | Domain logic: `Dataset`, `EstadoOperacional`, `RouteFinder`, `PlanificacionUtils` |
-| `tasf.strategy` | Interfaces + `TwoPhaseOrchestrator` |
-| `tasf.strategy.alns` | ALNS metaheuristic |
-| `tasf.strategy.aco` | ACO metaheuristic |
-| `tasf.strategy.flow` | Phase 2 deterministic assigner |
-| `tasf.experiments` | `StandardExperimentPipeline`, load-level generator, stat tables |
+| `tasf.core` | Domain logic: `Dataset`, `EstadoOperacional`, `RouteFinder`, `PlanificacionUtils`, `DistribucionEnviosPorDia`, `CapacidadDiariaCalculadora`, `ColapsoDetector`, `Solucion` |
+| `tasf.strategy` | Interfaces (`PlanificadorRutasStrategy`, `PlanificadorStrategy`, `Asignador`) + `TwoPhaseOrchestrator` |
+| `tasf.strategy.alns` | ALNS metaheuristic (`ALNS_RutasPlanner`, `ALNS_Strategy`) |
+| `tasf.strategy.aco` | ACO metaheuristic (`ACO_RutasPlanner`, `ACO_Strategy`) |
+| `tasf.strategy.flow` | Phase 2 deterministic assigner (`MinCostFlowAsignador`, `MinCostFlowAssigner`, `Asignador`) |
+| `tasf.experiments` | `StandardExperimentPipeline` |
 | `tasf.io` | Text file loaders for airports, flights, packages |
-| `tasf.model` | Domain classes: `Paquete`, `Vuelo`, `Ruta`, `Aeropuerto`, etc. |
+| `tasf.model` | Domain classes: `Paquete`, `Vuelo`, `Ruta`, `Aeropuerto`, `Tramo` |
+| `tasf.config` | `Config_Simulacion` |
 
 ## Data
 
@@ -67,6 +68,16 @@ cost = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + hor
 ## Testing
 
 `PlannerTests` is a single-file test harness with manual assertions (no JUnit). Run via `java -cp out tasf.tests.PlannerTests`. Uses synthetic datasets built in code; does **not** require input data files.
+
+## JSON Log Format
+
+Logs are written to `data/output/log_YYYYMMDD_HHMMSS.json` with these sections:
+
+- **metadata**: algorithm, date selection type (`rango`, `fecha_fija`, `dia_maximo`, `rango_indice`, `dia_indice`), selected date display, totals, cost, duration
+- **escaneo**: scan info (days scanned, scan time, total shipments) — only in `dia_maximo` mode
+- **configuracion**: adaptive config (mode, iterations, ants, evaporation, etc.)
+- **diagnosticoFueraDePlazo**: detailed breakdown of late packages with full route — only when there are late packages
+- **asignaciones**: list of assigned packages with route and flight details
 
 ## Gotchas
 
