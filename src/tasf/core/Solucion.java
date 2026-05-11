@@ -9,24 +9,17 @@ import java.util.Map;
 import java.util.Set;
 
 public class Solucion {
-    private final String estrategia;
     private final Map<String, Ruta> rutasAsignadas;
     private final Set<String> paquetesNoAsignados;
     private final Map<String, Double> metricas;
     private int maletasFueraDePlazo;
     private int eventosColapso;
     private double costoTotal;
-    private double horasPromedioEntrega;
 
     public Solucion(String estrategia) {
-        this.estrategia = estrategia;
         this.rutasAsignadas = new HashMap<>();
         this.paquetesNoAsignados = new HashSet<>();
         this.metricas = new HashMap<>();
-    }
-
-    public String getEstrategia() {
-        return estrategia;
     }
 
     public Map<String, Ruta> getRutasAsignadas() {
@@ -47,10 +40,6 @@ public class Solucion {
 
     public double getCostoTotal() {
         return costoTotal;
-    }
-
-    public double getHorasPromedioEntrega() {
-        return horasPromedioEntrega;
     }
 
     public Map<String, Double> getMetricas() {
@@ -75,10 +64,6 @@ public class Solucion {
 
     public void setCostoTotal(double costoTotal) {
         this.costoTotal = costoTotal;
-    }
-
-    public void setHorasPromedioEntrega(double horasPromedioEntrega) {
-        this.horasPromedioEntrega = horasPromedioEntrega;
     }
 
     public void setMetrica(String nombre, double valor) {

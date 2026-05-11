@@ -1,6 +1,5 @@
 package tasf.model;
 
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -65,18 +64,6 @@ public class Vuelo {
         return destino;
     }
 
-    public LocalDate getFecha() {
-        return fecha;
-    }
-
-    public LocalTime getHoraSalidaLocal() {
-        return horaSalidaLocal;
-    }
-
-    public LocalTime getHoraLlegadaLocal() {
-        return horaLlegadaLocal;
-    }
-
     public int getCapacidadCarga() {
         return capacidadCarga;
     }
@@ -89,16 +76,7 @@ public class Vuelo {
         return llegadaUtc;
     }
 
-    public long getDuracionMinutos() {
-        return Duration.between(salidaUtc, llegadaUtc).toMinutes();
-    }
-
     public Tramo getTramo() {
         return tramo;
-    }
-
-    @Override
-    public String toString() {
-        return id + "(" + origen.getCodigoOACI() + "->" + destino.getCodigoOACI() + ")";
     }
 }

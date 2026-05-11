@@ -1,7 +1,6 @@
 package tasf.config;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
 
 public class Config_Simulacion {
     private String aeropuertoHub = "SKBO";
@@ -25,7 +24,6 @@ public class Config_Simulacion {
     private int hormigasEliteACO = 3;
     private double factorEliteACO = 1.5;
     private double factorGlobalBestACO = 2.5;
-    private LocalDateTime finSimulacionUtcExclusivo;
 
     public String getAeropuertoHub() {
         return aeropuertoHub;
@@ -193,13 +191,5 @@ public class Config_Simulacion {
 
     public void setFactorGlobalBestACO(double factorGlobalBestACO) {
         this.factorGlobalBestACO = factorGlobalBestACO;
-    }
-
-    public LocalDateTime getFinSimulacionUtcExclusivo() {
-        return finSimulacionUtcExclusivo;
-    }
-
-    public void setFinSimulacionUtcExclusivo(LocalDateTime finSimulacionUtcExclusivo) {
-        this.finSimulacionUtcExclusivo = finSimulacionUtcExclusivo;
     }
 }

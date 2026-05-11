@@ -1,7 +1,6 @@
 package tasf.experiments;
 
 import tasf.config.Config_Simulacion;
-import tasf.core.CapacidadDiariaCalculadora;
 import tasf.core.ColapsoDetector;
 import tasf.core.Dataset;
 import tasf.core.DistribucionEnviosPorDia;
@@ -63,6 +62,13 @@ public final class StandardExperimentPipeline {
     private final LocalDate fechaEnviosRangoFin;
     private final List<AlgorithmSpec> algoritmos;
 
+    // Tracking fields for JSON log
+    private String tipoSeleccionFecha = "";
+    private String fechaSeleccionadaDisplay = "";
+    private Map<String, Object> escaneoInfo = new HashMap<>();
+    private Map<String, Object> configAdaptativa = new HashMap<>();
+    private List<Map<String, Object>> diagnosticoFueraPlazo = new ArrayList<>();
+
     public StandardExperimentPipeline(
             Path dataDir,
             LocalDate fechaInicioVuelos,
@@ -118,6 +124,8 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
         LocalDate fechaReferencia = null;
         if (fechaEnviosRangoInicio != null && fechaEnviosRangoFin != null) {
             // Rango de fechas explícito con fechas reales
+            tipoSeleccionFecha = "rango";
+            fechaSeleccionadaDisplay = fechaEnviosRangoInicio + " a " + fechaEnviosRangoFin;
             System.out.println(String.format("Envíos: %s a %s (%d días)",
                     fechaEnviosRangoInicio, fechaEnviosRangoFin, duracionEnvios));
             LocalDate current = fechaEnviosRangoInicio;
@@ -130,6 +138,8 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
             msScan = 0;
         } else if (fechaEnviosFiltro != null) {
             // Fecha específica
+            tipoSeleccionFecha = "fecha_fija";
+            fechaSeleccionadaDisplay = fechaEnviosFiltro.toString();
             fechaReferencia = fechaEnviosFiltro;
             fechasNecesarias.add(fechaReferencia);
             System.out.println(String.format("Envíos: %s", fechaReferencia));
@@ -137,6 +147,7 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
             msScan = 0;
         } else if (usarDiaMaximoEnvios) {
             // Día con más envíos: escanear para encontrarlo
+            tipoSeleccionFecha = "dia_maximo";
             conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
                     resolverCarpetaEnvios(dataDir), aeropuertos
             );
@@ -145,7 +156,11 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
                     .max(Map.Entry.comparingByValue())
                     .map(Map.Entry::getKey)
                     .orElseThrow(() -> new IllegalStateException("No hay días con envíos"));
+            fechaSeleccionadaDisplay = fechaReferencia + " (" + conteoPorDia.get(fechaReferencia) + " envíos)";
             fechasNecesarias.add(fechaReferencia);
+            escaneoInfo.put("diasEscaneados", conteoPorDia.size());
+            escaneoInfo.put("tiempoEscaneoMs", msScan);
+            escaneoInfo.put("totalEnviosEscaneados", conteoPorDia.values().stream().mapToInt(Integer::intValue).sum());
             System.out.println(String.format(Locale.ROOT,
                     "Envíos: %s (%d envíos, escaneo %d días en %dms)",
                     fechaReferencia,
@@ -154,9 +169,11 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
                     msScan));
         } else if (fechaEnviosDia > 0 && duracionEnvios > 0) {
             // Rango de fechas por índice de día (relativo a fechaInicioVuelos)
+            tipoSeleccionFecha = "rango_indice";
             LocalDate fechaInicioBase = fechaInicioVuelos;
             fechaReferencia = fechaInicioBase.plusDays(fechaEnviosDia - 1);
             LocalDate fechaFin = fechaReferencia.plusDays(duracionEnvios - 1);
+            fechaSeleccionadaDisplay = "días " + fechaEnviosDia + "-" + (fechaEnviosDia + duracionEnvios - 1) + " (" + fechaReferencia + " a " + fechaFin + ")";
             if (duracionEnvios == 1) {
                 System.out.println(String.format("Envíos: día %d (%s)", fechaEnviosDia, fechaReferencia));
             } else {
@@ -170,12 +187,15 @@ Map<LocalDate, Integer> conteoPorDia = new HashMap<>();
             msScan = 0;
         } else if (fechaEnviosDia > 0) {
             // Solo un día por índice
+            tipoSeleccionFecha = "dia_indice";
             conteoPorDia = new HashMap<>();
             msScan = 0;
             LocalDate fechaInicioBase = fechaInicioVuelos;
             fechaReferencia = fechaInicioBase.plusDays(fechaEnviosDia - 1);
+            fechaSeleccionadaDisplay = "día " + fechaEnviosDia + " (" + fechaReferencia + ")";
             System.out.println(String.format("Envíos: día %d (%s)", fechaEnviosDia, fechaReferencia));
         } else {
+            tipoSeleccionFecha = "dia_maximo";
             conteoPorDia = DatasetTextoLoader.escanearConteoPorDia(
                     resolverCarpetaEnvios(dataDir), aeropuertos
             );
@@ -311,8 +331,6 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         System.out.println("[2/4] Algoritmo: " + algoritmos.get(0).name);
 
         DistribucionEnviosPorDia distribucionEnvios = new DistribucionEnviosPorDia(dataset.getPaquetes());
-        CapacidadDiariaCalculadora calculadoraCapacidad = new CapacidadDiariaCalculadora(dataset.getVuelos());
-        int capacidadMaximaDiaria = calculadoraCapacidad.estadisticas().maximo;
 
         DistribucionEnviosPorDia.DiaSeleccionado diaUnico = null;
         if (fechaEnviosRangoInicio != null && fechaEnviosRangoFin != null) {
@@ -426,10 +444,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                 rawRecords.add(new RunRecord(
                         algoritmo.name,
                         totalMaletasDia,
-                        nivelEnvios,
                         dia.fecha,
-                        dia.cantidad,
-                        1,
                         totalEnvios,
                         asignados,
                         noAsignados,
@@ -455,7 +470,6 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         }
 
         ResultTable rawTable = new ResultTable(rawRecords);
-        ResultTable summaryTable = rawTable.resumir();
 
         Path outputDir = dataDir.resolve("output");
         Files.createDirectories(outputDir);
@@ -509,8 +523,9 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                 "[4/4] Log: %s [%dms]",
                 jsonLog.getFileName(), msTotal));
 
-        return new PipelineResult(capacidadMaximaDiaria, nivelesObjetivo, rawTable, summaryTable, null, null,
-                totalPaquetes, totalMaletas, maletasAsignadas, pedidosAsignados, sinAsignar, fueraDePlazo, hayColapso, costoTotal, duracionMs);
+        return new PipelineResult(
+                totalPaquetes, totalMaletas, maletasAsignadas, pedidosAsignados,
+                sinAsignar, fueraDePlazo, hayColapso, costoTotal, duracionMs);
     }
 
     private Solucion ejecutarAlgoritmo(AlgorithmSpec algoritmo, Dataset datasetDia, Config_Simulacion config) {
@@ -570,6 +585,29 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                     System.out.print(v.getId() + "(" + v.getSalidaUtc().toString() + "→" + v.getLlegadaUtc().toString() + ") ");
                 }
                 System.out.println();
+
+                Map<String, Object> diagEntry = new LinkedHashMap<>();
+                diagEntry.put("pedidoId", p.getId());
+                diagEntry.put("origen", p.getOrigenOACI());
+                diagEntry.put("destino", p.getDestinoOACI());
+                diagEntry.put("cantidad", p.getCantidad());
+                diagEntry.put("escalas", ruta.getCantidadSaltos());
+                diagEntry.put("creacion", creacion.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "Z");
+                diagEntry.put("deadline", deadline.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "Z");
+                diagEntry.put("llegada", llegada.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "Z");
+                diagEntry.put("retrasoMinutos", retrasoMin);
+                diagEntry.put("tipoPlazo", mismoContinente ? "MISMO_CONTINENTE(24h)" : "INTERCONTINENTAL(48h)");
+                
+                List<Map<String, String>> vuelosRuta = new ArrayList<>();
+                for (var v : ruta.getVuelos()) {
+                    Map<String, String> vueloEntry = new LinkedHashMap<>();
+                    vueloEntry.put("vueloId", v.getId());
+                    vueloEntry.put("salida", v.getSalidaUtc().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "Z");
+                    vueloEntry.put("llegada", v.getLlegadaUtc().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) + "Z");
+                    vuelosRuta.add(vueloEntry);
+                }
+                diagEntry.put("ruta", vuelosRuta);
+                diagnosticoFueraPlazo.add(diagEntry);
             }
         }
     }
@@ -618,8 +656,16 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         boolean muchosPaquetes = totalPaquetes > 5000;
         boolean muchosVuelos = diasVuelos >= 100;
 
+        configAdaptativa.put("iteracionesALNS", config.getIteracionesALNS());
+        configAdaptativa.put("iteracionesACO", config.getIteracionesACO());
+        configAdaptativa.put("hormigasACO", config.getHormigasACO());
+        configAdaptativa.put("maxRutasPorPaquete", config.getMaxRutasPorPaquete());
+        configAdaptativa.put("maxEscalas", config.getMaxEscalas());
+        configAdaptativa.put("horizonteBusquedaHoras", config.getHorizonteBusqueda().toHours());
+        configAdaptativa.put("evaporacionFeromona", config.getEvaporacionFeromona());
+
         if (muchosPaquetes && muchosVuelos) {
-            config.setMaxRutasPorPaquete(50);
+            config.setMaxRutasPorPaquete(100);
             config.setIteracionesALNS(100);
             config.setIteracionesACO(50);
             config.setVentanaActualizacionPesos(5);
@@ -627,17 +673,35 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             config.setAlphaACO(0.8);
             config.setBetaACO(2.8);
             config.setEvaporacionFeromona(0.3);
+            config.setPorcentajeRuptura(0.10);
+            configAdaptativa.put("iteracionesALNS", 100);
+            configAdaptativa.put("iteracionesACO", 50);
+            configAdaptativa.put("hormigasACO", 16);
+            configAdaptativa.put("maxRutasPorPaquete", 100);
+            configAdaptativa.put("alphaACO", 0.8);
+            configAdaptativa.put("betaACO", 2.8);
+            configAdaptativa.put("evaporacionFeromona", 0.3);
+            configAdaptativa.put("porcentajeRuptura", 0.10);
+            configAdaptativa.put("modo", "muchos_paquetes_y_vuelos");
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTATIVO] paquetes=%d vuelos=%d → ALNS=100, ACO=50, maxRutas=50",
+                    "  [ADAPTATIVO] paquetes=%d vuelos=%d → ALNS=100, ACO=50, maxRutas=100, ruptura=10%%",
                     totalPaquetes, diasVuelos * 2866));
         } else if (muchosPaquetes) {
-            config.setMaxRutasPorPaquete(50);
+            config.setMaxRutasPorPaquete(100);
             config.setIteracionesALNS(100);
             config.setIteracionesACO(50);
             config.setVentanaActualizacionPesos(5);
+            config.setPorcentajeRuptura(0.10);
+            configAdaptativa.put("iteracionesALNS", 100);
+            configAdaptativa.put("iteracionesACO", 50);
+            configAdaptativa.put("maxRutasPorPaquete", 100);
+            configAdaptativa.put("porcentajeRuptura", 0.10);
+            configAdaptativa.put("modo", "muchos_paquetes");
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTATIVO] paquetes=%d → ALNS=100, ACO=50, maxRutas=50",
+                    "  [ADAPTATIVO] paquetes=%d → ALNS=100, ACO=50, maxRutas=100, ruptura=10%%",
                     totalPaquetes));
+        } else {
+            configAdaptativa.put("modo", "default");
         }
         return config;
     }
@@ -655,10 +719,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
     public static final class RunRecord {
         public final String algoritmo;
         public final int nivelCargaMaletas;
-        public final int objetivoEnvios;
         public final LocalDate fechaSeleccionada;
-        public final int enviosDiaSeleccionado;
-        public final int corrida;
         public final int totalEnvios;
         public final int asignados;
         public final int noAsignados;
@@ -672,10 +733,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         public RunRecord(
                 String algoritmo,
                 int nivelCargaMaletas,
-                int objetivoEnvios,
                 LocalDate fechaSeleccionada,
-                int enviosDiaSeleccionado,
-                int corrida,
                 int totalEnvios,
                 int asignados,
                 int noAsignados,
@@ -688,10 +746,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         ) {
             this.algoritmo = algoritmo;
             this.nivelCargaMaletas = nivelCargaMaletas;
-            this.objetivoEnvios = objetivoEnvios;
             this.fechaSeleccionada = fechaSeleccionada;
-            this.enviosDiaSeleccionado = enviosDiaSeleccionado;
-            this.corrida = corrida;
             this.totalEnvios = totalEnvios;
             this.asignados = asignados;
             this.noAsignados = noAsignados;
@@ -704,66 +759,21 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         }
     }
 
-    public static final class SummaryRecord {
-        public final String algoritmo;
-        public final int nivelCargaMaletas;
-        public final int corridas;
-        public final double promedioExito;
-        public final double tasaColapso;
-        public final double promedioCosto;
-        public final double promedioDuracionMs;
-        public final double promedioNoAsignados;
-        public final double promedioFueraPlazo;
-
-        public SummaryRecord(
-                String algoritmo,
-                int nivelCargaMaletas,
-                int corridas,
-                double promedioExito,
-                double tasaColapso,
-                double promedioCosto,
-                double promedioDuracionMs,
-                double promedioNoAsignados,
-                double promedioFueraPlazo
-        ) {
-            this.algoritmo = algoritmo;
-            this.nivelCargaMaletas = nivelCargaMaletas;
-            this.corridas = corridas;
-            this.promedioExito = promedioExito;
-            this.tasaColapso = tasaColapso;
-            this.promedioCosto = promedioCosto;
-            this.promedioDuracionMs = promedioDuracionMs;
-            this.promedioNoAsignados = promedioNoAsignados;
-            this.promedioFueraPlazo = promedioFueraPlazo;
-        }
-    }
-
     public static final class ResultTable {
-        private final List<? extends Object> rows;
-        private final boolean summary;
+        private final List<RunRecord> rows;
 
-        private ResultTable(List<? extends Object> rows) {
-            this(rows, false);
-        }
-
-        private ResultTable(List<? extends Object> rows, boolean summary) {
+        private ResultTable(List<RunRecord> rows) {
             this.rows = Collections.unmodifiableList(new ArrayList<>(rows));
-            this.summary = summary;
-        }
-
-        public List<?> getRows() {
-            return rows;
         }
 
         public ResultTable resumir() {
             Map<String, List<RunRecord>> grouped = new LinkedHashMap<>();
-            for (Object row : rows) {
-                RunRecord record = (RunRecord) row;
-                String key = record.algoritmo + "|" + record.nivelCargaMaletas;
-                grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(record);
+            for (RunRecord row : rows) {
+                String key = row.algoritmo + "|" + row.nivelCargaMaletas;
+                grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(row);
             }
 
-            List<SummaryRecord> summaryRows = new ArrayList<>();
+            List<Map<String, Object>> summaryRows = new ArrayList<>();
             for (List<RunRecord> group : grouped.values()) {
                 RunRecord base = group.get(0);
                 int corridas = group.size();
@@ -773,97 +783,28 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                 double promedioDuracion = group.stream().mapToLong(r -> r.duracionMs).average().orElse(0.0);
                 double promedioNoAsignados = group.stream().mapToInt(r -> r.noAsignados).average().orElse(0.0);
                 double promedioFueraPlazo = group.stream().mapToInt(r -> r.maletasFueraDePlazo).average().orElse(0.0);
-                summaryRows.add(new SummaryRecord(
-                        base.algoritmo,
-                        base.nivelCargaMaletas,
-                        corridas,
-                        promedioExito,
-                        tasaColapso,
-                        promedioCosto,
-                        promedioDuracion,
-                        promedioNoAsignados,
-                        promedioFueraPlazo
-                ));
+                Map<String, Object> summary = new LinkedHashMap<>();
+                summary.put("algoritmo", base.algoritmo);
+                summary.put("nivelCargaMaletas", base.nivelCargaMaletas);
+                summary.put("corridas", corridas);
+                summary.put("promedioExito", promedioExito);
+                summary.put("tasaColapso", tasaColapso);
+                summary.put("promedioCosto", promedioCosto);
+                summary.put("promedioDuracionMs", promedioDuracion);
+                summary.put("promedioNoAsignados", promedioNoAsignados);
+                summary.put("promedioFueraPlazo", promedioFueraPlazo);
+                summaryRows.add(summary);
             }
             summaryRows.sort((a, b) -> {
-                int cmp = Integer.compare(a.nivelCargaMaletas, b.nivelCargaMaletas);
-                if (cmp != 0) {
-                    return cmp;
-                }
-                return a.algoritmo.compareTo(b.algoritmo);
+                int cmp = Integer.compare((int)a.get("nivelCargaMaletas"), (int)b.get("nivelCargaMaletas"));
+                if (cmp != 0) return cmp;
+                return ((String)a.get("algoritmo")).compareTo((String)b.get("algoritmo"));
             });
-            return new ResultTable(summaryRows, true);
-        }
-
-        public void writeCsv(Path outputCsv) throws IOException {
-            Objects.requireNonNull(outputCsv, "outputCsv no puede ser null");
-            List<String> lines = toCsvLines();
-            Path parent = outputCsv.toAbsolutePath().normalize().getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.write(outputCsv, lines, StandardCharsets.UTF_8);
-        }
-
-public List<String> toCsvLines() {
-            List<String> lines = new ArrayList<>();
-            if (!summary) {
-                lines.add("algoritmo,nivelCargaMaletas,objetivoEnvios,fechaSeleccionada,enviosDiaSeleccionado,corrida,totalEnvios,asignados,noAsignados,porcentajeExito,maletasFueraDePlazo,hayColapso,costoTotal,duracionMs");
-                for (Object row : rows) {
-                    RunRecord r = (RunRecord) row;
-                    lines.add(String.format(Locale.ROOT,
-                            "%s,%d,%d,%s,%d,%d,%d,%d,%d,%.6f,%d,%s,%.4f,%d",
-                            escape(r.algoritmo),
-                            r.nivelCargaMaletas,
-                            r.objetivoEnvios,
-                            r.fechaSeleccionada,
-                            r.enviosDiaSeleccionado,
-                            r.corrida,
-                            r.totalEnvios,
-                            r.asignados,
-                            r.noAsignados,
-                            r.porcentajeExito / 100.0,
-                            r.maletasFueraDePlazo,
-                            r.hayColapso,
-                            r.costoTotal,
-                            r.duracionMs
-                    ));
-                }
-            } else {
-                lines.add("algoritmo,nivelCargaMaletas,corridas,promedioExito,tasaColapso,promedioCosto,promedioDuracionMs,promedioNoAsignados,promedioFueraPlazo");
-                for (Object row : rows) {
-                    SummaryRecord r = (SummaryRecord) row;
-                    lines.add(String.format(Locale.ROOT,
-                            "%s,%d,%d,%.6f,%.6f,%.4f,%.4f,%.4f,%.4f",
-                            escape(r.algoritmo),
-                            r.nivelCargaMaletas,
-                            r.corridas,
-                            r.promedioExito,
-                            r.tasaColapso,
-                            r.promedioCosto,
-                            r.promedioDuracionMs,
-                            r.promedioNoAsignados,
-                            r.promedioFueraPlazo));
-                }
-            }
-            return lines;
-        }
-
-        private String escape(String value) {
-            if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-                return '"' + value.replace("\"", "\"\"") + '"';
-            }
-            return value;
+            return new ResultTable(new ArrayList<>());
         }
     }
 
     public static final class PipelineResult {
-        public final int capacidadMaximaDiaria;
-        public final List<Integer> nivelesObjetivo;
-        public final ResultTable rawTable;
-        public final ResultTable summaryTable;
-        public final Path rawCsv;
-        public final Path summaryCsv;
         public final int totalPaquetes;
         public final int totalMaletas;
         public final int maletasAsignadas;
@@ -875,12 +816,6 @@ public List<String> toCsvLines() {
         public final long duracionMs;
 
         public PipelineResult(
-                int capacidadMaximaDiaria,
-                List<Integer> nivelesObjetivo,
-                ResultTable rawTable,
-                ResultTable summaryTable,
-                Path rawCsv,
-                Path summaryCsv,
                 int totalPaquetes,
                 int totalMaletas,
                 int maletasAsignadas,
@@ -891,12 +826,6 @@ public List<String> toCsvLines() {
                 double costoTotal,
                 long duracionMs
         ) {
-            this.capacidadMaximaDiaria = capacidadMaximaDiaria;
-            this.nivelesObjetivo = Collections.unmodifiableList(new ArrayList<>(nivelesObjetivo));
-            this.rawTable = rawTable;
-            this.summaryTable = summaryTable;
-            this.rawCsv = rawCsv;
-            this.summaryCsv = summaryCsv;
             this.totalPaquetes = totalPaquetes;
             this.totalMaletas = totalMaletas;
             this.maletasAsignadas = maletasAsignadas;
@@ -937,7 +866,6 @@ public List<String> toCsvLines() {
 
         RunRecord record = records.get(0);
         String algoritmo = record.algoritmo;
-        String fechaSeleccionada = String.valueOf(record.fechaSeleccionada);
         Solucion solucion = record != null ? record.solucion : null;
 
         int totalMaletas = record.nivelCargaMaletas;
@@ -966,11 +894,12 @@ public List<String> toCsvLines() {
 
         json.append("  \"metadata\": {\n");
         json.append("    \"algoritmo\": \"").append(algoritmo).append("\",\n");
+        json.append("    \"tipoSeleccionFecha\": \"").append(tipoSeleccionFecha).append("\",\n");
+        json.append("    \"fechaSeleccionada\": \"").append(fechaSeleccionadaDisplay).append("\",\n");
         json.append("    \"maletasTotales\": ").append(totalMaletas).append(",\n");
         json.append("    \"maletasAsignadas\": ").append(maletasAsignadas).append(",\n");
         json.append("    \"pedidosTotales\": ").append(totalPedidos).append(",\n");
         json.append("    \"pedidosAsignados\": ").append(pedidosAsignados).append(",\n");
-        json.append("    \"fechaSeleccionada\": \"").append(fechaSeleccionada).append("\",\n");
         json.append("    \"rangoDiasVuelos\": \"").append(fechaInicioVuelos).append(" a ").append(fechaFinVuelos).append("\",\n");
         json.append("    \"hayColapso\": ").append(hayColapso).append(",\n");
         json.append("    \"maletasFueraDePlazo\": ").append(maletasFueraPlazo).append(",\n");
@@ -979,6 +908,66 @@ public List<String> toCsvLines() {
         json.append("    \"duracionMs\": ").append(duracionMs).append(",\n");
         json.append("    \"generado\": \"").append(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("\"\n");
         json.append("  },\n");
+
+        if (!escaneoInfo.isEmpty()) {
+            json.append("  \"escaneo\": {\n");
+            json.append("    \"diasEscaneados\": ").append(escaneoInfo.get("diasEscaneados")).append(",\n");
+            json.append("    \"tiempoEscaneoMs\": ").append(escaneoInfo.get("tiempoEscaneoMs")).append(",\n");
+            json.append("    \"totalEnviosEscaneados\": ").append(escaneoInfo.get("totalEnviosEscaneados")).append("\n");
+            json.append("  },\n");
+        }
+
+        if (!configAdaptativa.isEmpty()) {
+            json.append("  \"configuracion\": {\n");
+            json.append("    \"modo\": \"").append(configAdaptativa.get("modo")).append("\",\n");
+            json.append("    \"iteracionesALNS\": ").append(configAdaptativa.get("iteracionesALNS")).append(",\n");
+            json.append("    \"iteracionesACO\": ").append(configAdaptativa.get("iteracionesACO")).append(",\n");
+            json.append("    \"hormigasACO\": ").append(configAdaptativa.get("hormigasACO")).append(",\n");
+            json.append("    \"maxRutasPorPaquete\": ").append(configAdaptativa.get("maxRutasPorPaquete")).append(",\n");
+            json.append("    \"maxEscalas\": ").append(configAdaptativa.get("maxEscalas")).append(",\n");
+            json.append("    \"horizonteBusquedaHoras\": ").append(configAdaptativa.get("horizonteBusquedaHoras")).append(",\n");
+            json.append("    \"evaporacionFeromona\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("evaporacionFeromona"))).append("\n");
+            if (configAdaptativa.containsKey("alphaACO")) {
+                json.append("    ,\"alphaACO\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("alphaACO"))).append(",\n");
+                json.append("    \"betaACO\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("betaACO"))).append(",\n");
+                json.append("    \"porcentajeRuptura\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("porcentajeRuptura"))).append("\n");
+            }
+            json.append("  },\n");
+        }
+
+        if (!diagnosticoFueraPlazo.isEmpty()) {
+            json.append("  \"diagnosticoFueraDePlazo\": [\n");
+            for (int i = 0; i < diagnosticoFueraPlazo.size(); i++) {
+                Map<String, Object> entry = diagnosticoFueraPlazo.get(i);
+                if (i > 0) json.append(",\n");
+                json.append("    {\n");
+                json.append("      \"pedidoId\": \"").append(entry.get("pedidoId")).append("\",\n");
+                json.append("      \"origen\": \"").append(entry.get("origen")).append("\",\n");
+                json.append("      \"destino\": \"").append(entry.get("destino")).append("\",\n");
+                json.append("      \"cantidad\": ").append(entry.get("cantidad")).append(",\n");
+                json.append("      \"escalas\": ").append(entry.get("escalas")).append(",\n");
+                json.append("      \"creacion\": \"").append(entry.get("creacion")).append("\",\n");
+                json.append("      \"deadline\": \"").append(entry.get("deadline")).append("\",\n");
+                json.append("      \"llegada\": \"").append(entry.get("llegada")).append("\",\n");
+                json.append("      \"retrasoMinutos\": ").append(entry.get("retrasoMinutos")).append(",\n");
+                json.append("      \"tipoPlazo\": \"").append(entry.get("tipoPlazo")).append("\",\n");
+                json.append("      \"ruta\": [\n");
+                @SuppressWarnings("unchecked")
+                List<Map<String, String>> vuelosRuta = (List<Map<String, String>>) entry.get("ruta");
+                for (int j = 0; j < vuelosRuta.size(); j++) {
+                    Map<String, String> vuelo = vuelosRuta.get(j);
+                    if (j > 0) json.append(",\n");
+                    json.append("        {\n");
+                    json.append("          \"vueloId\": \"").append(vuelo.get("vueloId")).append("\",\n");
+                    json.append("          \"salida\": \"").append(vuelo.get("salida")).append("\",\n");
+                    json.append("          \"llegada\": \"").append(vuelo.get("llegada")).append("\"\n");
+                    json.append("        }");
+                }
+                json.append("\n      ]\n");
+                json.append("    }");
+            }
+            json.append("\n  ],\n");
+        }
 
         json.append("  \"asignaciones\": [\n");
 

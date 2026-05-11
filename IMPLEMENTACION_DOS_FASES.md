@@ -31,10 +31,10 @@ src/tasf/
 ├── app/
 │   └── Main.java                              (PUNTO DE ENTRADA + CLI)
 ├── experiments/
-│   ├── StandardExperimentPipeline.java         (PIPELINE DE EXPERIMENTACIÓN)
-│   └── GeneradorNivelesCarga.java              (GENERADOR DE NIVELES)
+│   └── StandardExperimentPipeline.java         (PIPELINE DE EXPERIMENTACIÓN)
 ├── strategy/
 │   ├── PlanificadorRutasStrategy.java           (INTERFAZ FASE 1)
+│   ├── PlanificadorStrategy.java                (INTERFAZ INTERNA METAHEURÍSTICA)
 │   ├── TwoPhaseOrchestrator.java               (ORQUESTADOR)
 │   ├── aco/
 │   │   ├── ACO_RutasPlanner.java               (WRAPPER ACO)
@@ -43,6 +43,7 @@ src/tasf/
 │   │   ├── ALNS_RutasPlanner.java              (WRAPPER ALNS)
 │   │   └── ALNS_Strategy.java                  (LÓGICA ALNS)
 │   └── flow/
+│       ├── Asignador.java                       (INTERFAZ FASE 2)
 │       ├── MinCostFlowAsignador.java           (ADAPTADOR FASE 2)
 │       └── MinCostFlowAssigner.java            (ASIGNADOR DE VUELOS)
 ├── core/
@@ -51,9 +52,19 @@ src/tasf/
 │   ├── PlanificacionUtils.java                 (UTILIDADES + EVALUACIÓN)
 │   ├── RouteFinder.java                        (BÚSQUEDA DE RUTAS)
 │   ├── DistribucionEnviosPorDia.java           (DISTRIBUCIÓN POR DÍA)
-│   └── ...
-└── io/
-    └── DatasetTextoLoader.java                 (CARGA DE ARCHIVOS)
+│   ├── CapacidadDiariaCalculadora.java         (CAPACIDAD DIARIA)
+│   ├── ColapsoDetector.java                    (DETECCIÓN DE COLAPSO)
+│   └── Solucion.java                           (MODELO DE SOLUCIÓN)
+├── model/
+│   ├── Aeropuerto.java                         (MODELO AEROPUERTO)
+│   ├── Paquete.java                            (MODELO PAQUETE)
+│   ├── Ruta.java                               (MODELO RUTA)
+│   ├── Vuelo.java                              (MODELO VUELO)
+│   └── Tramo.java                              (MODELO TRAMO)
+├── io/
+│   └── DatasetTextoLoader.java                 (CARGA DE ARCHIVOS)
+└── config/
+    └── Config_Simulacion.java                  (CONFIGURACIÓN)
 ```
 
 ---
@@ -197,7 +208,6 @@ Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles comp
 - [README.md](README.md)
 - [ARQUITECTURA_DOS_FASES.md](ARQUITECTURA_DOS_FASES.md)
 - [data/README.md](data/README.md)
-- [GUIA_DISTRIBUCION_ENVIOS.md](GUIA_DISTRIBUCION_ENVIOS.md)
 
 ---
 

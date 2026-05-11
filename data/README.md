@@ -2,7 +2,7 @@
 
 Este proyecto usa la siguiente estructura organizada de datos:
 
-## 📁 Entrada (Input)
+## Entrada (Input)
 
 ### aeropuertos/
 Coloca aquí el archivo de aeropuertos con la palabra "Aeropuerto" en el nombre.
@@ -41,24 +41,28 @@ _envios_SPIM_.txt
 
 ---
 
-## 📁 Salida (Output)
+## Salida (Output)
 
 Aquí se guardan los resultados de las ejecuciones:
 
 ```
 data/output/
-├── experimentos_raw_YYYYMMDD_HHmmss.csv
-├── experimentos_resumen_YYYYMMDD_HHmmss.csv
-└── ...
+└── log_YYYYMMDD_HHMMSS.json
 ```
 
 **Archivos generados**:
-- `experimentos_raw_*.csv`: Una fila por corrida (algoritmo, nivel, métricas)
-- `experimentos_resumen_*.csv`: Resumen agregado por nivel
+- `log_*.json`: Log completo de la corrida con metadata, configuración, diagnóstico y asignaciones.
+
+Cada log JSON contiene:
+- **metadata**: algoritmo, tipo de selección de fecha, fecha seleccionada, métricas (maletas totales/asignadas, pedidos, colapso, costo, duración)
+- **escaneo**: información del escaneo de días (solo en modo `--fecha-envios=max`)
+- **configuracion**: parámetros adaptativos usados (iteraciones ALNS/ACO, hormigas, maxRutas, evaporación, etc.)
+- **diagnosticoFueraDePlazo**: detalle de cada paquete fuera de plazo con ruta completa y retraso (solo si hay paquetes fuera de plazo)
+- **asignaciones**: lista de paquetes asignados con su ruta, vuelos, creación, deadline y tiempos
 
 ---
 
-## 🚀 Ejecutar
+## Ejecutar
 
 ### Opción A: Uso Estándar
 
@@ -68,14 +72,10 @@ java -cp out tasf.app.Main
 
 Ejecuta el pipeline con configuración por defecto:
 - Datos de `data/`
-- Carga todos los vuelos disponibles (`--dias-vuelos=0` por defecto).
-- Ejecuta ALNS y ACO con 10 corridas cada uno.
-- Cada algoritmo produce una solución paquete -> ruta y luego pasa por la validación determinística de Fase 2.
-- Genera 5 niveles de carga (20%-70% del máximo de paquetes diarios).
-- Para cada nivel busca el día histórico con cantidad de paquetes más cercana.
-- Exporta CSV a `data/output/`.
-
-**Nota**: el pipeline siempre ejecuta ambos algoritmos; no hay modo interactivo para correr solo uno.
+- Carga 3 días de vuelos (`--dias-vuelos=3` por defecto).
+- Usa el día con más envíos (`--fecha-envios=max`).
+- Ejecuta ALNS con semilla 17.
+- Genera un log JSON en `data/output/`.
 
 ### Opción B: Comandos Personalizados
 
@@ -83,35 +83,31 @@ Ejecuta el pipeline con configuración por defecto:
 # Cambiar directorio de datos
 java -cp out tasf.app.Main --data-dir=/ruta/a/datos
 
+# Cambiar algoritmo
+java -cp out tasf.app.Main --algoritmo=ACO
+
 # Cambiar ventana de vuelos (7 días desde 2026-02-01)
 java -cp out tasf.app.Main \
   --fecha-inicio-vuelos=2026-02-01 \
   --dias-vuelos=7
 
-# Evaluar un día completo de envíos (el más cargado)
-java -cp out tasf.app.Main \
-  --corridas=1 \
-  --max-envios=0 \
-  --fecha-envios=max
+# Evaluar el día más cargado
+java -cp out tasf.app.Main --fecha-envios=max
 
 # Evaluar una fecha concreta
-java -cp out tasf.app.Main \
-  --corridas=1 \
-  --max-envios=0 \
-  --fecha-envios=2026-11-02
+java -cp out tasf.app.Main --fecha-envios=2026-01-06
 
-# Barrer porcentajes de paquetes hasta encontrar el primero que cumpla plazo
-java -cp out tasf.app.Main \
-  --corridas=1 \
-  --max-envios=0 \
-  --fecha-envios=max \
-  --barrer-porcentaje-envios \
-  --porcentaje-envios-inicial=100 \
-  --porcentaje-envios-minimo=10 \
-  --paso-porcentaje-envios=5
+# Evaluar un día por índice relativo
+java -cp out tasf.app.Main --fecha-envios=5
 
-# Cambiar número de corridas
-java -cp out tasf.app.Main --corridas=20
+# Rango de fechas explícito
+java -cp out tasf.app.Main --rango-envios=2026-01-01:2026-01-07
+
+# Rango por índice numérico
+java -cp out tasf.app.Main --rango-envios=3-7
+
+# Cargar todos los vuelos (~1095 días)
+java -cp out tasf.app.Main --dias-vuelos=0 --fecha-envios=max
 
 # Cambiar semillas de aleatoriedad
 java -cp out tasf.app.Main \
@@ -124,56 +120,53 @@ java -cp out tasf.app.Main --max-envios=100
 
 ---
 
-## 📋 Parámetros CLI Disponibles
+## Parámetros CLI Disponibles
 
 | Parámetro | Valor Default | Descripción |
 |-----------|---------------|-------------|
 | `--data-dir` | `data` | Directorio raíz con input/ y output/ |
-| `--fecha-inicio-vuelos` | `2026-01-02` | Fecha inicial de la ventana de vuelos |
-| `--dias-vuelos` | `0` | Cantidad de días a cargar; `0` = cargar todos disponibles (~1095 días) |
+| `--algoritmo` | `ALNS` | Algoritmo: `ALNS` o `ACO` |
+| `--fecha-inicio-vuelos` | `2026-01-01` | Fecha inicial de la ventana de vuelos |
+| `--dias-vuelos` | `3` | Cantidad de días a cargar; `0` = cargar todos disponibles (~1095 días) |
 | `--max-envios` | `0` (todos) | Límite de envíos por archivo; `0` = sin límite |
-| `--corridas` | `10` | Número de corridas **por algoritmo** (ALNS + ACO cada uno) |
-| `--fecha-envios` | - | Selecciona un día específico; `max` = día con más paquetes |
-| `--barrer-porcentaje-envios` | desactivado | Activa barrido descendente de porcentaje de paquetes |
-| `--porcentaje-envios-inicial` | `100` | Porcentaje inicial del barrido (100% = todos los paquetes del día) |
-| `--porcentaje-envios-minimo` | `10` | Porcentaje mínimo (parar cuando se alcance) |
-| `--paso-porcentaje-envios` | `5` | Paso de reducción entre iteraciones |
+| `--fecha-envios` | `max` | Selecciona un día: índice (`5`), fecha (`2026-01-06`), o `max` |
+| `--duracion-envios` | `1` | Días consecutivos de envíos |
+| `--rango-envios` | - | Rango: `2026-01-01:2026-01-07` o índice `3-7` |
 | `--semilla-alns` | `17` | Semilla aleatoria para ALNS |
 | `--semilla-aco` | `17` | Semilla aleatoria para ACO |
 
+**Nota**: cuando se usa `--fecha-envios` o `--rango-envios` sin `--dias-vuelos`, la ventana de vuelos se calcula automáticamente a 3 días.
+
 ---
 
-## 🎯 Qué Hace Exactamente una Ejecución
+## Qué Hace Exactamente una Ejecución
 
 Cuando ejecutas `java -cp out tasf.app.Main`:
 
 1. **Lee CLI** y arma el `StandardExperimentPipeline`
 2. **Carga datos** desde `data/input/`:
    - Aeropuertos (OACI, husos horarios)
-   - Vuelos: Si `--dias-vuelos=0` → carga ~1095 días (3.1M vuelos)
+   - Vuelos: 3 días por defecto, o todos si `--dias-vuelos=0`
    - Paquetes: todos los archivos de `data/input/envios/`
-3. **Calcula estadísticas** de envíos por día
-4. **Decide qué evaluar**:
-   - **Sin `--fecha-envios`** → Genera 5 niveles de carga (20%-70% del máximo paquetes diarios) y para cada nivel busca el día histórico con cantidad de paquetes más cercana
-   - **Con `--fecha-envios=max`** → Usa el día con máxima cantidad de paquetes
+3. **Determina fechas de envío**:
+   - **Sin `--fecha-envios`** → Usa `max` (día con más paquetes)
+   - **Con `--fecha-envios=max`** → Escanea y usa el día con máxima cantidad de paquetes
    - **Con `--fecha-envios=YYYY-MM-DD`** → Usa ese día específico
-   - **Con `--barrer-porcentaje-envios`** → Reduce progresivamente el porcentaje de paquetes del día seleccionado
-5. **Ejecuta los algoritmos**:
-   - Para cada configuración (nivel o día):
-     - Ejecuta **ALNS** N veces (N = `--corridas`)
-     - Ejecuta **ACO** N veces (N = `--corridas`)
-     - Comparte entrada (vuelos, paquetes del día/porcentaje)
-6. **Evalúa resultados** para cada corrida:
+   - **Con `--fecha-envios=N`** → Usa el día N relativo a `fechaInicioVuelos`
+   - **Con `--rango-envios=A:B`** → Procesa todos los paquetes del rango
+4. **Calcula ventana de vuelos** centrada en las fechas de envío
+5. **Ejecuta el algoritmo** seleccionado (ALNS o ACO):
+   - Fase 1: planifica rutas para cada paquete
+   - Fase 2: valida factibilidad operacional
+6. **Evalúa resultados**:
    - ¿Se asignaron todos los paquetes?
    - ¿Todos llegan dentro del plazo?
    - ¿Detecta colapso del sistema?
-7. **Exporta CSV** a `data/output/`:
-   - `experimentos_raw_*.csv` → Una fila por corrida (todos los detalles)
-   - `experimentos_resumen_*.csv` → Agregado por nivel/algoritmo
+7. **Exporta JSON** a `data/output/log_YYYYMMDD_HHMMSS.json`
 
 ---
 
-## ✅ Validación
+## Validación
 
 ```bash
 # Compilar
@@ -185,7 +178,7 @@ java -cp out tasf.tests.PlannerTests
 
 ---
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### Error: "No se encontraron archivos"
 Verifica que existan:
@@ -203,7 +196,6 @@ Verifica formatos de archivo:
 Es normal si la ventana de vuelos es pequeña. Soluciones:
 - Usa `--dias-vuelos=0` para cargar todos los vuelos disponibles
 - Usa `--fecha-envios=max` para evaluar el día más cargado
-- Usa `--barrer-porcentaje-envios` para reducir progresivamente la muestra
 
 ### Error de compilación
 Asegúrate de tener Java 8+ instalado: `java -version`
