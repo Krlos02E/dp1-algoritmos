@@ -87,7 +87,7 @@ java -cp out tasf.app.Main \
 | Parámetro | Valor Default | Descripción |
 |-----------|---------------|-------------|
 | `--data-dir` | `data` | Directorio raíz de datos |
-| `--algoritmo` | `ALNS` | Algoritmo a ejecutar: `ALNS` o `ACO` |
+| `--algoritmo` | `ALNS` | Algoritmo a ejecutar: `ALNS` |
 | `--fecha-inicio-vuelos` | `2026-01-01` | Fecha de inicio de la ventana de vuelos |
 | `--dias-vuelos` | `3` | Cantidad de días de vuelos; `0` carga todos (~1095 días) |
 | `--max-envios` | `0` (todos) | Límite de envíos por archivo (0 = sin límite) |

@@ -22,10 +22,8 @@ public class Main {
 
             if (parametros.algoritmo.equalsIgnoreCase("ALNS")) {
                 algoritmos.add(new StandardExperimentPipeline.AlgorithmSpec("ALNS", () -> new tasf.strategy.alns.ALNS_RutasPlanner(parametros.semillaALNS)));
-            } else if (parametros.algoritmo.equalsIgnoreCase("ACO")) {
-                algoritmos.add(new StandardExperimentPipeline.AlgorithmSpec("ACO", () -> new tasf.strategy.aco.ACO_RutasPlanner(parametros.semillaACO)));
             } else {
-                System.err.println("Algoritmo no válido: " + parametros.algoritmo + ". Use ALNS o ACO.");
+                System.err.println("Algoritmo no válido: " + parametros.algoritmo + ". Use ALNS.");
                 System.exit(1);
             }
 
@@ -72,7 +70,6 @@ public class Main {
         private final LocalDate fechaEnviosRangoInicio;
         private final LocalDate fechaEnviosRangoFin;
         private final long semillaALNS;
-        private final long semillaACO;
         private final String algoritmo;
 
         private static int calcularDiasVuelosAutomatico() {
@@ -85,21 +82,20 @@ public class Main {
             return (int) Math.ceil((double) horasTotales / 24);
         }
 
-    private ParametrosCli(
-            Path dataDir,
-            LocalDate fechaInicioVuelos,
-            int diasVuelos,
-            int maxEnviosPorArchivo,
-            LocalDate fechaEnviosFiltro,
-            boolean usarDiaMaximoEnvios,
-            int fechaEnviosDia,
-            int duracionEnvios,
-            LocalDate fechaEnviosRangoInicio,
-            LocalDate fechaEnviosRangoFin,
-            long semillaALNS,
-            long semillaACO,
-            String algoritmo
-    ) {
+        private ParametrosCli(
+                Path dataDir,
+                LocalDate fechaInicioVuelos,
+                int diasVuelos,
+                int maxEnviosPorArchivo,
+                LocalDate fechaEnviosFiltro,
+                boolean usarDiaMaximoEnvios,
+                int fechaEnviosDia,
+                int duracionEnvios,
+                LocalDate fechaEnviosRangoInicio,
+                LocalDate fechaEnviosRangoFin,
+                long semillaALNS,
+                String algoritmo
+        ) {
             this.dataDir = dataDir;
             this.fechaInicioVuelos = fechaInicioVuelos;
             this.diasVuelos = diasVuelos;
@@ -111,7 +107,6 @@ public class Main {
             this.fechaEnviosRangoInicio = fechaEnviosRangoInicio;
             this.fechaEnviosRangoFin = fechaEnviosRangoFin;
             this.semillaALNS = semillaALNS;
-            this.semillaACO = semillaACO;
             this.algoritmo = algoritmo;
         }
 
@@ -196,8 +191,6 @@ public class Main {
                     }
                 } else if (arg.startsWith("--semilla-alns=")) {
                     semillaALNS = Long.parseLong(arg.substring("--semilla-alns=".length()));
-                } else if (arg.startsWith("--semilla-aco=")) {
-                    semillaACO = Long.parseLong(arg.substring("--semilla-aco=".length()));
                 } else if (arg.startsWith("--algoritmo=")) {
                     algoritmo = arg.substring("--algoritmo=".length()).trim();
                 }
@@ -223,12 +216,11 @@ public class Main {
                       usarDiaMaximoEnvios,
                       fechaEnviosDia,
                       duracionEnvios,
-                     fechaEnviosRangoInicio,
-                     fechaEnviosRangoFin,
-                     semillaALNS,
-                     semillaACO,
-                     algoritmo
-             );
+                      fechaEnviosRangoInicio,
+                      fechaEnviosRangoFin,
+                      semillaALNS,
+                      algoritmo
+              );
         }
     }
 }

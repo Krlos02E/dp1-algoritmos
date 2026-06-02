@@ -12,7 +12,6 @@ import tasf.model.Paquete;
 import tasf.model.Ruta;
 import tasf.model.Vuelo;
 import tasf.strategy.PlanificadorStrategy;
-import tasf.strategy.aco.ACO_Strategy;
 import tasf.strategy.alns.ALNS_Strategy;
 
 import java.time.Duration;
@@ -30,7 +29,6 @@ public class PlannerTests {
         tests.testConversionUtcYConexionFactible();
         tests.testRestriccionCapacidadAlmacen();
         tests.testALNSActualizaPesos();
-        tests.testACOActualizaFeromonas();
         System.out.println("Todas las pruebas pasaron correctamente.");
     }
 
@@ -107,19 +105,6 @@ public class PlannerTests {
             w1 > 0.0 && w2 > 0.0 && w3 > 0.0 && w4 > 0.0,
             "Los pesos ALNS deben ser positivos"
         );
-    }
-
-    void testACOActualizaFeromonas() {
-        Dataset datos = crearDatasetBase(100);
-        Config_Simulacion config = crearConfigBase();
-        config.setIteracionesACO(20);
-        config.setHormigasACO(8);
-
-        PlanificadorStrategy aco = new ACO_Strategy(13L);
-        Solucion solucion = aco.planificar(datos, config);
-
-        double maxFer = solucion.getMetricas().getOrDefault("feromonaMaxima", 0.0);
-        assertTrue(maxFer > 1.0, "No hubo actualizacion de feromonas en ACO");
     }
 
     private Dataset crearDatasetBase(int capacidadHub) {
