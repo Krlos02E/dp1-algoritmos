@@ -42,7 +42,7 @@ import java.util.function.Supplier;
  *
  * Hace el flujo completo solicitado:
  * - Selecciona fecha(s) de envíos (rango, fecha fija, día máximo, o índice)
- * - Ejecuta un algoritmo (ALNS o ACO)
+ * - Ejecuta un algoritmo (ALNS)
  * - Detecta colapso del sistema
  * - Exporta resultados listos para ANOVA o graficas
  * - Usa Min-Cost Flow como asignador unico
@@ -635,11 +635,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         config.setMinimaConexion(Duration.ofMinutes(30));
 
             config.setIteracionesALNS(20);
-            config.setIteracionesACO(10);
-            config.setHormigasACO(4);
             config.setMaxRutasPorPaquete(4);
-            config.setTopRutasACO(2);
-            config.setHormigasEliteACO(1);
             config.setMaxEscalas(2);
             config.setVentanaActualizacionPesos(5);
             config.setEvaporacionFeromona(0.4);
@@ -655,48 +651,37 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         boolean muchosVuelos = diasVuelos >= 100;
 
         configAdaptativa.put("iteracionesALNS", config.getIteracionesALNS());
-        configAdaptativa.put("iteracionesACO", config.getIteracionesACO());
-        configAdaptativa.put("hormigasACO", config.getHormigasACO());
         configAdaptativa.put("maxRutasPorPaquete", config.getMaxRutasPorPaquete());
         configAdaptativa.put("maxEscalas", config.getMaxEscalas());
         configAdaptativa.put("horizonteBusquedaHoras", config.getHorizonteBusqueda().toHours());
         configAdaptativa.put("evaporacionFeromona", config.getEvaporacionFeromona());
+        configAdaptativa.put("porcentajeRuptura", config.getPorcentajeRuptura());
 
         if (muchosPaquetes && muchosVuelos) {
             config.setMaxRutasPorPaquete(100);
             config.setIteracionesALNS(100);
-            config.setIteracionesACO(50);
             config.setVentanaActualizacionPesos(5);
-            config.setHormigasACO(16);
-            config.setAlphaACO(0.8);
-            config.setBetaACO(2.8);
             config.setEvaporacionFeromona(0.3);
             config.setPorcentajeRuptura(0.10);
             configAdaptativa.put("iteracionesALNS", 100);
-            configAdaptativa.put("iteracionesACO", 50);
-            configAdaptativa.put("hormigasACO", 16);
             configAdaptativa.put("maxRutasPorPaquete", 100);
-            configAdaptativa.put("alphaACO", 0.8);
-            configAdaptativa.put("betaACO", 2.8);
             configAdaptativa.put("evaporacionFeromona", 0.3);
             configAdaptativa.put("porcentajeRuptura", 0.10);
             configAdaptativa.put("modo", "muchos_paquetes_y_vuelos");
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTATIVO] paquetes=%d vuelos=%d → ALNS=100, ACO=50, maxRutas=100, ruptura=10%%",
+                    "  [ADAPTATIVO] paquetes=%d vuelos=%d → ALNS=100, maxRutas=100, ruptura=10%%",
                     totalPaquetes, diasVuelos * 2866));
         } else if (muchosPaquetes) {
             config.setMaxRutasPorPaquete(100);
             config.setIteracionesALNS(100);
-            config.setIteracionesACO(50);
             config.setVentanaActualizacionPesos(5);
             config.setPorcentajeRuptura(0.10);
             configAdaptativa.put("iteracionesALNS", 100);
-            configAdaptativa.put("iteracionesACO", 50);
             configAdaptativa.put("maxRutasPorPaquete", 100);
             configAdaptativa.put("porcentajeRuptura", 0.10);
             configAdaptativa.put("modo", "muchos_paquetes");
             System.out.println(String.format(Locale.ROOT,
-                    "  [ADAPTATIVO] paquetes=%d → ALNS=100, ACO=50, maxRutas=100, ruptura=10%%",
+                    "  [ADAPTATIVO] paquetes=%d → ALNS=100, maxRutas=100, ruptura=10%%",
                     totalPaquetes));
         } else {
             configAdaptativa.put("modo", "default");
@@ -919,17 +904,11 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             json.append("  \"configuracion\": {\n");
             json.append("    \"modo\": \"").append(configAdaptativa.get("modo")).append("\",\n");
             json.append("    \"iteracionesALNS\": ").append(configAdaptativa.get("iteracionesALNS")).append(",\n");
-            json.append("    \"iteracionesACO\": ").append(configAdaptativa.get("iteracionesACO")).append(",\n");
-            json.append("    \"hormigasACO\": ").append(configAdaptativa.get("hormigasACO")).append(",\n");
             json.append("    \"maxRutasPorPaquete\": ").append(configAdaptativa.get("maxRutasPorPaquete")).append(",\n");
             json.append("    \"maxEscalas\": ").append(configAdaptativa.get("maxEscalas")).append(",\n");
             json.append("    \"horizonteBusquedaHoras\": ").append(configAdaptativa.get("horizonteBusquedaHoras")).append(",\n");
-            json.append("    \"evaporacionFeromona\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("evaporacionFeromona"))).append("\n");
-            if (configAdaptativa.containsKey("alphaACO")) {
-                json.append("    ,\"alphaACO\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("alphaACO"))).append(",\n");
-                json.append("    \"betaACO\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("betaACO"))).append(",\n");
-                json.append("    \"porcentajeRuptura\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("porcentajeRuptura"))).append("\n");
-            }
+            json.append("    \"evaporacionFeromona\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("evaporacionFeromona"))).append(",\n");
+            json.append("    \"porcentajeRuptura\": ").append(String.format(Locale.ROOT, "%.2f", (double)configAdaptativa.get("porcentajeRuptura"))).append("\n");
             json.append("  },\n");
         }
 

@@ -2,7 +2,7 @@
 
 Sistema de planificación logística con arquitectura de dos fases.
 
-1. Fase 1: metaheurística (ACO o ALNS) selecciona una ruta por paquete.
+1. Fase 1: metaheurística (ALNS) selecciona una ruta por paquete.
 2. Fase 2: un asignador determinístico valida y reserva la ruta completa paquete → ruta → vuelos.
 
 El flujo está orientado a experimentación automatizada, con métricas de costo, tardanza, capacidad, colapso y porcentaje de éxito.
@@ -50,9 +50,6 @@ Esto hace, en este orden:
 ### 3. Ejecutar (modo personalizado)
 
 ```bash
-# Cambiar algoritmo
-java -cp out tasf.app.Main --algoritmo=ACO
-
 # Ventana de vuelos personalizada
 java -cp out tasf.app.Main \
   --fecha-inicio-vuelos=2026-01-05 \
@@ -78,8 +75,7 @@ java -cp out tasf.app.Main --dias-vuelos=0 --fecha-envios=max
 
 # Semillas personalizadas
 java -cp out tasf.app.Main \
-  --semilla-alns=42 \
-  --semilla-aco=99
+  --semilla-alns=42
 ```
 
 ### 4. Parámetros CLI
@@ -95,7 +91,6 @@ java -cp out tasf.app.Main \
 | `--duracion-envios` | `1` | Número de días consecutivos de envíos |
 | `--rango-envios` | - | Rango de fechas: `2026-01-01:2026-01-07` o índice `3-7` |
 | `--semilla-alns` | `17` | Semilla aleatoria para ALNS |
-| `--semilla-aco` | `17` | Semilla aleatoria para ACO |
 
 **Nota sobre `--dias-vuelos`**: cuando se usa `--fecha-envios` o `--rango-envios` sin especificar `--dias-vuelos`, se calcula automáticamente a 3 días (basado en plazos de 24h/48h + 24h buffer).
 
@@ -127,16 +122,8 @@ El sistema ejecuta **un algoritmo por invocación**, seleccionado con `--algorit
 - Operadores de ruptura: random, worst-delay, congestión.
 - Operadores de reparación: greedy, regret.
 
-### ACO (Ant Colony Optimization)
-- Múltiples hormigas construyen soluciones en paralelo.
-- Feromonas guían la selección probabilística de rutas.
-- Depósito de feromonas por ranking (elite) y global-best.
-- Reinicio controlado tras estancamiento prolongado.
-- Perturbación Lévy para escapar óptimos locales.
-- Refinamiento local post-construcción.
-
 ### Pipeline compartido
-Ambos algoritmos pasan por el mismo orquestador `TwoPhaseOrchestrator`:
+El algoritmo pasa por el mismo orquestador `TwoPhaseOrchestrator`:
 1. Fase 1: el algoritmo produce `Map<String, Ruta>`.
 2. Fase 2: `MinCostFlowAsignador` valida factibilidad operacional.
 3. Evaluación: `PlanificacionUtils.evaluarAsignacion()` calcula el costo global.
@@ -147,7 +134,7 @@ Ambos algoritmos pasan por el mismo orquestador `TwoPhaseOrchestrator`:
 
 La solución sigue dividida en dos fases:
 
-1. **Fase 1**: `ACO_RutasPlanner` o `ALNS_RutasPlanner` producen una ruta seleccionada por paquete.
+1. **Fase 1**: `ALNS_RutasPlanner` produce una ruta seleccionada por paquete.
 2. **Fase 2**: `MinCostFlowAsignador` valida y reserva la ruta seleccionada sobre el estado operacional.
 
 El flujo completo lo ejecuta `StandardExperimentPipeline` desde `Main`.

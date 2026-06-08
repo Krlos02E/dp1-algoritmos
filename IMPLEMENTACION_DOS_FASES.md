@@ -5,10 +5,10 @@
 La solución quedó dividida en dos fases coordinadas:
 
 ### Fase 1: planificación de rutas
-- Algoritmos: ACO y ALNS (se ejecuta uno por invocación).
+- Algoritmos: ALNS (se ejecuta uno por invocación).
 - Salida: `Map<String, Ruta>` con una ruta seleccionada por paquete.
 - Contrato: `PlanificadorRutasStrategy`.
-- Implementadores: `ACO_RutasPlanner`, `ALNS_RutasPlanner`.
+- Implementadores: `ALNS_RutasPlanner`.
 
 ### Fase 2: validación determinística
 - Algoritmo: validación operacional sobre la ruta ya elegida.
@@ -36,9 +36,6 @@ src/tasf/
 │   ├── PlanificadorRutasStrategy.java           (INTERFAZ FASE 1)
 │   ├── PlanificadorStrategy.java                (INTERFAZ INTERNA METAHEURÍSTICA)
 │   ├── TwoPhaseOrchestrator.java               (ORQUESTADOR)
-│   ├── aco/
-│   │   ├── ACO_RutasPlanner.java               (WRAPPER ACO)
-│   │   └── ACO_Strategy.java                   (LÓGICA ACO)
 │   ├── alns/
 │   │   ├── ALNS_RutasPlanner.java              (WRAPPER ALNS)
 │   │   └── ALNS_Strategy.java                  (LÓGICA ALNS)
@@ -71,10 +68,10 @@ src/tasf/
 
 ## Uso básico
 
-### Ejemplo 1: flujo completo con ACO
+### Ejemplo 1: flujo completo con ALNS
 
 ```java
-PlanificadorRutasStrategy planificador = new ACO_RutasPlanner(semilla);
+PlanificadorRutasStrategy planificador = new ALNS_RutasPlanner(semilla);
 TwoPhaseOrchestrator orchestrator = new TwoPhaseOrchestrator(planificador);
 Solucion solucion = orchestrator.ejecutarFlujoCompleto(datos, config);
 
@@ -92,7 +89,7 @@ Map<String, Ruta> rutas = planificador.planificarRutas(datos, config);
 ### Ejemplo 3: Fase 1 y Fase 2 por separado
 
 ```java
-PlanificadorRutasStrategy planificador = new ACO_RutasPlanner(semilla);
+PlanificadorRutasStrategy planificador = new ALNS_RutasPlanner(semilla);
 Map<String, Ruta> rutasSeleccionadas = planificador.planificarRutas(datos, config);
 
 MinCostFlowAssigner asignador = new MinCostFlowAssigner();
@@ -132,7 +129,7 @@ La Fase 2 no vuelve a puntuar rutas alternativas. Solo valida la selección de l
 Dataset + Config
     ↓
     ├─ FASE 1: planificación de rutas
-    │  (ACO o ALNS)
+    │  (ALNS)
     │  ↓
     │  Map<String, Ruta>
     │  (ruta seleccionada por paquete)
@@ -165,7 +162,7 @@ Dataset → Fase 1: rutas → Fase 2: validación → Solucion
 ```
 - La construcción y la validación quedan separadas.
 - La evaluación global se comparte entre algoritmos.
-- El pipeline puede ejecutar ALNS o ACO con la misma entrada.
+- El pipeline puede ejecutar ALNS con la misma entrada.
 
 ---
 
@@ -184,7 +181,7 @@ Calcular ventana de vuelos centrada en fechas de envío
   ↓
 Cargar paquetes y vuelos filtrados
   ↓
-Ejecutar algoritmo seleccionado (ALNS o ACO)
+Ejecutar algoritmo seleccionado (ALNS)
   ↓
 Validar rutas seleccionadas (Fase 2)
   ↓
@@ -196,7 +193,7 @@ Evaluar solución y exportar log JSON
 ```bash
 javac -encoding UTF-8 -d out $(find src -name "*.java")
 java -cp out tasf.app.Main
-java -cp out tasf.app.Main --algoritmo=ACO --fecha-envios=max
+java -cp out tasf.app.Main --algoritmo=ALNS --fecha-envios=max
 ```
 
 Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles completos.
@@ -215,7 +212,7 @@ Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles comp
 
 - Arquitectura de dos fases funcional.
 - Pipeline integrado en `Main`.
-- Evaluación global compartida entre ACO y ALNS.
+- Evaluación global compartida en ALNS.
 - Log JSON generado en `data/output/`.
 
 ---

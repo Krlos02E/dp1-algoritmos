@@ -9,21 +9,13 @@ public class Config_Simulacion {
     private Duration minimaConexion = Duration.ofMinutes(45);
     private Duration horizonteBusqueda = Duration.ofHours(72);
     private int iteracionesALNS = 120;
-    private int iteracionesACO = 50;
-    private int hormigasACO = 12;
     private int maxEscalas = 3;
     private int maxRutasPorPaquete = 50;
     private double porcentajeRuptura = 0.25;
     private int ventanaActualizacionPesos = 20;
     private double tasaAprendizajePesos = 0.35;
-    private double alphaACO = 0.9;
-    private double betaACO = 3.2;
     private double evaporacionFeromona = 0.25;
     private double depositoFeromonaQ = 80.0;
-    private int topRutasACO = 4;
-    private int hormigasEliteACO = 3;
-    private double factorEliteACO = 1.5;
-    private double factorGlobalBestACO = 2.5;
 
     public String getAeropuertoHub() {
         return aeropuertoHub;
@@ -73,22 +65,6 @@ public class Config_Simulacion {
         this.iteracionesALNS = iteracionesALNS;
     }
 
-    public int getIteracionesACO() {
-        return iteracionesACO;
-    }
-
-    public void setIteracionesACO(int iteracionesACO) {
-        this.iteracionesACO = iteracionesACO;
-    }
-
-    public int getHormigasACO() {
-        return hormigasACO;
-    }
-
-    public void setHormigasACO(int hormigasACO) {
-        this.hormigasACO = hormigasACO;
-    }
-
     public int getMaxEscalas() {
         return maxEscalas;
     }
@@ -129,22 +105,6 @@ public class Config_Simulacion {
         this.tasaAprendizajePesos = tasaAprendizajePesos;
     }
 
-    public double getAlphaACO() {
-        return alphaACO;
-    }
-
-    public void setAlphaACO(double alphaACO) {
-        this.alphaACO = alphaACO;
-    }
-
-    public double getBetaACO() {
-        return betaACO;
-    }
-
-    public void setBetaACO(double betaACO) {
-        this.betaACO = betaACO;
-    }
-
     public double getEvaporacionFeromona() {
         return evaporacionFeromona;
     }
@@ -161,35 +121,4 @@ public class Config_Simulacion {
         this.depositoFeromonaQ = depositoFeromonaQ;
     }
 
-    public int getTopRutasACO() {
-        return topRutasACO;
-    }
-
-    public void setTopRutasACO(int topRutasACO) {
-        this.topRutasACO = topRutasACO;
-    }
-
-    public int getHormigasEliteACO() {
-        return hormigasEliteACO;
-    }
-
-    public void setHormigasEliteACO(int hormigasEliteACO) {
-        this.hormigasEliteACO = hormigasEliteACO;
-    }
-
-    public double getFactorEliteACO() {
-        return factorEliteACO;
-    }
-
-    public void setFactorEliteACO(double factorEliteACO) {
-        this.factorEliteACO = factorEliteACO;
-    }
-
-    public double getFactorGlobalBestACO() {
-        return factorGlobalBestACO;
-    }
-
-    public void setFactorGlobalBestACO(double factorGlobalBestACO) {
-        this.factorGlobalBestACO = factorGlobalBestACO;
-    }
 }

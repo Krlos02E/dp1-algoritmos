@@ -56,7 +56,7 @@ data/output/
 Cada log JSON contiene:
 - **metadata**: algoritmo, tipo de selección de fecha, fecha seleccionada, métricas (maletas totales/asignadas, pedidos, colapso, costo, duración)
 - **escaneo**: información del escaneo de días (solo en modo `--fecha-envios=max`)
-- **configuracion**: parámetros adaptativos usados (iteraciones ALNS/ACO, hormigas, maxRutas, evaporación, etc.)
+- **configuracion**: parámetros adaptativos usados (iteraciones ALNS, maxRutas, evaporación, etc.)
 - **diagnosticoFueraDePlazo**: detalle de cada paquete fuera de plazo con ruta completa y retraso (solo si hay paquetes fuera de plazo)
 - **asignaciones**: lista de paquetes asignados con su ruta, vuelos, creación, deadline y tiempos
 
@@ -83,9 +83,6 @@ Ejecuta el pipeline con configuración por defecto:
 # Cambiar directorio de datos
 java -cp out tasf.app.Main --data-dir=/ruta/a/datos
 
-# Cambiar algoritmo
-java -cp out tasf.app.Main --algoritmo=ACO
-
 # Cambiar ventana de vuelos (7 días desde 2026-02-01)
 java -cp out tasf.app.Main \
   --fecha-inicio-vuelos=2026-02-01 \
@@ -111,8 +108,7 @@ java -cp out tasf.app.Main --dias-vuelos=0 --fecha-envios=max
 
 # Cambiar semillas de aleatoriedad
 java -cp out tasf.app.Main \
-  --semilla-alns=42 \
-  --semilla-aco=99
+  --semilla-alns=42
 
 # Limitar envíos por archivo
 java -cp out tasf.app.Main --max-envios=100
@@ -125,7 +121,7 @@ java -cp out tasf.app.Main --max-envios=100
 | Parámetro | Valor Default | Descripción |
 |-----------|---------------|-------------|
 | `--data-dir` | `data` | Directorio raíz con input/ y output/ |
-| `--algoritmo` | `ALNS` | Algoritmo: `ALNS` o `ACO` |
+| `--algoritmo` | `ALNS` | Algoritmo: `ALNS` |
 | `--fecha-inicio-vuelos` | `2026-01-01` | Fecha inicial de la ventana de vuelos |
 | `--dias-vuelos` | `3` | Cantidad de días a cargar; `0` = cargar todos disponibles (~1095 días) |
 | `--max-envios` | `0` (todos) | Límite de envíos por archivo; `0` = sin límite |
@@ -133,7 +129,6 @@ java -cp out tasf.app.Main --max-envios=100
 | `--duracion-envios` | `1` | Días consecutivos de envíos |
 | `--rango-envios` | - | Rango: `2026-01-01:2026-01-07` o índice `3-7` |
 | `--semilla-alns` | `17` | Semilla aleatoria para ALNS |
-| `--semilla-aco` | `17` | Semilla aleatoria para ACO |
 
 **Nota**: cuando se usa `--fecha-envios` o `--rango-envios` sin `--dias-vuelos`, la ventana de vuelos se calcula automáticamente a 3 días.
 
@@ -155,7 +150,7 @@ Cuando ejecutas `java -cp out tasf.app.Main`:
    - **Con `--fecha-envios=N`** → Usa el día N relativo a `fechaInicioVuelos`
    - **Con `--rango-envios=A:B`** → Procesa todos los paquetes del rango
 4. **Calcula ventana de vuelos** centrada en las fechas de envío
-5. **Ejecuta el algoritmo** seleccionado (ALNS o ACO):
+5. **Ejecuta el algoritmo** seleccionado (ALNS):
    - Fase 1: planifica rutas para cada paquete
    - Fase 2: valida factibilidad operacional
 6. **Evalúa resultados**:

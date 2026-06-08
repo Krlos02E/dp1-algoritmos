@@ -14,7 +14,7 @@ import java.util.Map;
  * Orquestador del flujo de solución en dos fases:
  * 
  * Fase 1: Planificación de Rutas
- * - Usa un metaheurístico (ACO, ALNS, etc.)
+ * - Usa un metaheurístico (ALNS, etc.)
  * - Devuelve la ruta óptima seleccionada para cada paquete
  * 
  * Fase 2: Asignación de Envíos a Vuelos

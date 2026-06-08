@@ -6,9 +6,9 @@ La solución se ejecuta en dos fases coordinadas:
 
 ### Fase 1: planificación de rutas con metaheurísticas
 - Responsabilidad: construir una solución completa paquete → ruta.
-- Algoritmos: ACO y ALNS (se ejecuta uno por invocación).
+- Algoritmos: ALNS (se ejecuta uno por invocación).
 - Salida: `Map<String, Ruta>` con una ruta seleccionada por paquete.
-- Ubicación: `tasf.strategy.aco.ACO_RutasPlanner` y `tasf.strategy.alns.ALNS_RutasPlanner`.
+- Ubicación: `tasf.strategy.alns.ALNS_RutasPlanner`.
 
 ### Fase 2: asignación determinística
 - Responsabilidad: validar y reservar la ruta ya seleccionada.
@@ -17,7 +17,7 @@ La solución se ejecuta en dos fases coordinadas:
 - Salida: `Map<String, Ruta>` aceptada por factibilidad operacional.
 - Ubicación: `tasf.strategy.flow.MinCostFlowAssigner`.
 
-ACO y ALNS no entregan listas de candidatos al orquestador externo. Construyen soluciones completas, las puntúan con costo global y luego la Fase 2 valida capacidad, ocupación y restricciones temporales sobre la ruta elegida.
+ALNS no entrega listas de candidatos al orquestador externo. Construye soluciones completas, las puntúa con costo global y luego la Fase 2 valida capacidad, ocupación y restricciones temporales sobre la ruta elegida.
 
 ---
 
@@ -34,7 +34,7 @@ public interface PlanificadorRutasStrategy {
 Contrato de Fase 1: devuelve una ruta seleccionada por paquete.
 
 #### `PlanificadorStrategy`
-Interfaz interna que usan `ALNS_Strategy` y `ACO_Strategy` para la lógica metaheurística pura. Devuelve una `Solucion` completa.
+Interfaz interna que usa `ALNS_Strategy` para la lógica metaheurística pura. Devuelve una `Solucion` completa.
 
 #### `Asignador`
 ```java
@@ -45,10 +45,6 @@ public interface Asignador {
 Contrato de Fase 2: valida la ruta ya elegida y la reserva si sigue siendo factible.
 
 ### Implementaciones de la Fase 1
-
-#### `ACO_RutasPlanner`
-- Implementa `PlanificadorRutasStrategy`.
-- Ejecuta `ACO_Strategy` y expone su solución paquete → ruta.
 
 #### `ALNS_RutasPlanner`
 - Implementa `PlanificadorRutasStrategy`.
@@ -87,8 +83,8 @@ Flujo:
 ### Opción 1: Flujo Completo de Dos Fases
 
 ```java
-// Crear el orquestador con ACO
-PlanificadorRutasStrategy planificador = new ACO_RutasPlanner(semilla);
+// Crear el orquestador con ALNS
+PlanificadorRutasStrategy planificador = new ALNS_RutasPlanner(semilla);
 TwoPhaseOrchestrator orchestrator = new TwoPhaseOrchestrator(planificador);
 
 // Ejecutar ambas fases
@@ -165,7 +161,7 @@ La Fase 2 no reoptimiza la asignación; solo verifica si la ruta elegida sigue s
 ## Ventajas de la arquitectura de dos fases
 
 1. Separa la construcción de soluciones de la validación operacional.
-2. Permite cambiar ACO o ALNS sin tocar la lógica de validación.
+2. Permite cambiar ALNS sin tocar la lógica de validación.
 3. Centraliza la evaluación global en una sola función compartida.
 4. Facilita experimentación y comparación de algoritmos.
 5. Mantiene el flujo determinista en la segunda fase.
@@ -179,7 +175,7 @@ La configuración activa del pipeline se concentra en `Main` y `StandardExperime
 | Parámetro | Default | Descripción |
 |-----------|---------|-------------|
 | `--data-dir` | `data` | Directorio raíz de datos |
-| `--algoritmo` | `ALNS` | `ALNS` o `ACO` |
+| `--algoritmo` | `ALNS` | `ALNS` |
 | `--fecha-inicio-vuelos` | `2026-01-01` | Fecha de inicio de la ventana de vuelos |
 | `--dias-vuelos` | `3` | Días de vuelos; `0` = todos (~1095 días) |
 | `--max-envios` | `0` | Límite de envíos por archivo |
@@ -187,7 +183,6 @@ La configuración activa del pipeline se concentra en `Main` y `StandardExperime
 | `--duracion-envios` | `1` | Días consecutivos de envíos |
 | `--rango-envios` | - | `2026-01-01:2026-01-07` o índice `3-7` |
 | `--semilla-alns` | `17` | Semilla para ALNS |
-| `--semilla-aco` | `17` | Semilla para ACO |
 
 ---
 
@@ -226,6 +221,5 @@ Cada log generado en `data/output/log_YYYYMMDD_HHMMSS.json` contiene:
 ## Próximas mejoras sugeridas
 
 1. Mejorar los operadores de reparación de ALNS.
-2. Ajustar la política local de refinamiento en ACO.
-3. Añadir métricas más detalladas de colapso.
-4. Explorar paralelización en la evaluación de corridas.
+2. Añadir métricas más detalladas de colapso.
+3. Explorar paralelización en la evaluación de corridas.

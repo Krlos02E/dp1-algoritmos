@@ -2,7 +2,7 @@
 
 ## Project
 
-Java (8+) project — airport logistics route planning with a two-phase architecture: metaheuristic route selection (ACO / ALNS) followed by deterministic feasibility validation. No build tool (Maven/Gradle); plain `javac`.
+Java (8+) project — airport logistics route planning with a two-phase architecture: metaheuristic route selection (ALNS) followed by deterministic feasibility validation. No build tool (Maven/Gradle); plain `javac`.
 
 ## Commands
 
@@ -18,7 +18,7 @@ Order: compile → run / tests. No separate build tool. `target/` contains stale
 
 **Two-phase pipeline** orchestrated by `StandardExperimentPipeline`:
 
-- **Fase 1** — `PlanificadorRutasStrategy.planificarRutas()` → `Map<String, Ruta>` (one route per package). Implemented by `ALNS_RutasPlanner` and `ACO_RutasPlanner`.
+- **Fase 1** — `PlanificadorRutasStrategy.planificarRutas()` → `Map<String, Ruta>` (one route per package). Implemented by `ALNS_RutasPlanner`.
 - **Fase 2** — `MinCostFlowAssigner.asignarEnviosAVuelos()` validates each chosen route against `EstadoOperacional` (capacity, temporal windows). Rejects infeasible routes; does **not** re-optimize.
 
 The objective function lives in `PlanificacionUtils.evaluarAsignacion()`:
@@ -34,7 +34,6 @@ cost = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + hor
 | `tasf.core` | Domain logic: `Dataset`, `EstadoOperacional`, `RouteFinder`, `PlanificacionUtils`, `DistribucionEnviosPorDia`, `CapacidadDiariaCalculadora`, `ColapsoDetector`, `Solucion` |
 | `tasf.strategy` | Interfaces (`PlanificadorRutasStrategy`, `PlanificadorStrategy`, `Asignador`) + `TwoPhaseOrchestrator` |
 | `tasf.strategy.alns` | ALNS metaheuristic (`ALNS_RutasPlanner`, `ALNS_Strategy`) |
-| `tasf.strategy.aco` | ACO metaheuristic (`ACO_RutasPlanner`, `ACO_Strategy`) |
 | `tasf.strategy.flow` | Phase 2 deterministic assigner (`MinCostFlowAsignador`, `MinCostFlowAssigner`, `Asignador`) |
 | `tasf.experiments` | `StandardExperimentPipeline` |
 | `tasf.io` | Text file loaders for airports, flights, packages |
@@ -52,9 +51,9 @@ cost = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + hor
 
 ## CLI defaults (important)
 
-- `--algoritmo=ALNS` → runs ALNS. Use `--algoritmo=ACO` for ACO. **One algorithm per invocation.**
+- `--algoritmo=ALNS` → runs ALNS. **One algorithm per invocation.**
 - `--dias-vuelos=3` → loads 3 days of flights. `0` loads **all** flights (~3.1M, ~1095 days).
-- `--semilla-alns=17` / `--semilla-aco=17` — default seeds.
+- `--semilla-alns=17` — default seed.
 - `--fecha-envios` unset → uses `max` (day with highest shipment count).
 - `--rango-envios=2026-01-01:2026-01-07` → explicit date range (processes all packages in range).
 - `--rango-envios=3-7` → index-based range (days relative to `fechaInicioVuelos`).
@@ -75,7 +74,7 @@ Logs are written to `data/output/log_YYYYMMDD_HHMMSS.json` with these sections:
 
 - **metadata**: algorithm, date selection type (`rango`, `fecha_fija`, `dia_maximo`, `rango_indice`, `dia_indice`), selected date display, totals, cost, duration
 - **escaneo**: scan info (days scanned, scan time, total shipments) — only in `dia_maximo` mode
-- **configuracion**: adaptive config (mode, iterations, ants, evaporation, etc.)
+- **configuracion**: adaptive config (mode, iterations, evaporation, etc.)
 - **diagnosticoFueraDePlazo**: detailed breakdown of late packages with full route — only when there are late packages
 - **asignaciones**: list of assigned packages with route and flight details
 
