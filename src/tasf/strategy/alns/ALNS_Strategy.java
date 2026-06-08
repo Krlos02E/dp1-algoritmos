@@ -464,7 +464,7 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
                     .compareTo(PlanificacionUtils.getCreacionUtc(b, datos, config));
         });
 
-        int limite = Math.min(maxIntentos, sinRuta.size());
+        int limite = sinRuta.size();
         EstadoOperacional estado = PlanificacionUtils.construirEstadoConAsignaciones(propuesta, datos, config);
 
         for (Paquete p : sinRuta.subList(0, limite)) {
