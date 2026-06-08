@@ -122,7 +122,6 @@ public class Main {
             LocalDate fechaEnviosRangoInicio = null;
             LocalDate fechaEnviosRangoFin = null;
             long semillaALNS = 17L;
-            long semillaACO = 17L;
             String algoritmo = "ALNS";
             boolean diasVuelosEspecificado = false;
 

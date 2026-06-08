@@ -469,8 +469,6 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
 
         }
 
-        ResultTable rawTable = new ResultTable(rawRecords);
-
         Path outputDir = dataDir.resolve("output");
         Files.createDirectories(outputDir);
         String stamp = LocalDateTime.now().format(FILE_TS);

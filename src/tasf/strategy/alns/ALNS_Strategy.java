@@ -382,6 +382,7 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
             String mejorId = null;
             double mejorRegret = Double.NEGATIVE_INFINITY;
             Ruta mejorRutaParaMejorId = null;
+            double mejorScoreParaMejorId = Double.POSITIVE_INFINITY;
 
             for (String id : pendientes) {
                 Paquete p = datos.getPaquetePorId(id);
@@ -427,6 +428,7 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
                     mejorRegret = regret;
                     mejorId = id;
                     mejorRutaParaMejorId = bestRuta;
+                    mejorScoreParaMejorId = best;
                 }
             }
             if (mejorId == null) break;
@@ -622,9 +624,6 @@ temperatura = Math.max(1e-6, temperatura * 0.995);
         for (Paquete p : datos.getPaquetes()) {
             Ruta r = propuesta.get(p.getId());
             if (r == null) continue;
-
-            LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
-            LocalDateTime deadline = creacion.plus(PlanificacionUtils.getPlazoObjetivo(p, datos, config));
 
             // Mantener ruta aunque esté fuera de plazo: mejor tarde que nunca
             resultado.put(p.getId(), r);
