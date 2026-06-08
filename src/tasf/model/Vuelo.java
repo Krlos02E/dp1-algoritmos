@@ -8,9 +8,6 @@ public class Vuelo {
     private final String id;
     private final Aeropuerto origen;
     private final Aeropuerto destino;
-    private final LocalDate fecha;
-    private final LocalTime horaSalidaLocal;
-    private final LocalTime horaLlegadaLocal;
     private final int capacidadCarga;
     private final LocalDateTime salidaUtc;
     private final LocalDateTime llegadaUtc;
@@ -28,9 +25,6 @@ public class Vuelo {
         this.id = id;
         this.origen = origen;
         this.destino = destino;
-        this.fecha = fecha;
-        this.horaSalidaLocal = horaSalidaLocal;
-        this.horaLlegadaLocal = horaLlegadaLocal;
         this.capacidadCarga = capacidadCarga;
 
         LocalDateTime salidaLocalDt = LocalDateTime.of(fecha, horaSalidaLocal);

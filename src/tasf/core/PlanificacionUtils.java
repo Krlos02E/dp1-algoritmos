@@ -114,7 +114,6 @@ public final class PlanificacionUtils {
         });
 
         double horasAcumuladas = 0.0;
-        int entregados = 0;
 
         for (Paquete paquete : paquetes) {
             Ruta ruta = propuesta.get(paquete.getId());
@@ -135,7 +134,6 @@ public final class PlanificacionUtils {
             boolean fueraDePlazo = estaFueraDePlazo(paquete, ruta, datos, config);
             solucion.asignar(paquete.getId(), ruta, fueraDePlazo);
             horasAcumuladas += ruta.getHorasTotalesDesde(creacionUtc);
-            entregados++;
         }
 
         // Marcar como no asignados los paquetes que nunca tuvieron ruta en la propuesta
@@ -144,8 +142,6 @@ public final class PlanificacionUtils {
                 solucion.marcarNoAsignado(p.getId(), false);
             }
         }
-
-        double horasPromedio = entregados == 0 ? 0.0 : horasAcumuladas / entregados;
 
         int noAsignados = solucion.getPaquetesNoAsignados().size();
         double costo =

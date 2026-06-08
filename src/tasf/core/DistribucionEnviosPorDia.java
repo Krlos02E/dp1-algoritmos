@@ -11,14 +11,12 @@ import java.util.stream.Collectors;
 
 public class DistribucionEnviosPorDia {
 
-    private final List<Paquete> envios;
     private final Map<LocalDate, List<Paquete>> enviosPorDia;
 
     public DistribucionEnviosPorDia(List<Paquete> envios) {
         if (envios == null || envios.isEmpty()) {
             throw new IllegalArgumentException("Lista de envíos no puede estar vacía");
         }
-        this.envios = envios;
         this.enviosPorDia = envios.stream()
                 .collect(Collectors.groupingBy(Paquete::getFecha));
     }
