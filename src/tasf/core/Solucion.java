@@ -10,20 +10,28 @@ import java.util.Set;
 
 public class Solucion {
     private final Map<String, Ruta> rutasAsignadas;
+    private final Map<String, AsignacionPaquete> asignacionesSplit;
     private final Set<String> paquetesNoAsignados;
     private final Map<String, Double> metricas;
     private int maletasFueraDePlazo;
     private int eventosColapso;
     private double costoTotal;
+    private int maletasAsignadas;
 
     public Solucion(String estrategia) {
         this.rutasAsignadas = new HashMap<>();
+        this.asignacionesSplit = new HashMap<>();
         this.paquetesNoAsignados = new HashSet<>();
         this.metricas = new HashMap<>();
+        this.maletasAsignadas = 0;
     }
 
     public Map<String, Ruta> getRutasAsignadas() {
         return Collections.unmodifiableMap(rutasAsignadas);
+    }
+
+    public Map<String, AsignacionPaquete> getAsignacionesSplit() {
+        return Collections.unmodifiableMap(asignacionesSplit);
     }
 
     public Set<String> getPaquetesNoAsignados() {
@@ -42,6 +50,10 @@ public class Solucion {
         return costoTotal;
     }
 
+    public int getMaletasAsignadas() {
+        return maletasAsignadas;
+    }
+
     public Map<String, Double> getMetricas() {
         return Collections.unmodifiableMap(metricas);
     }
@@ -54,8 +66,19 @@ public class Solucion {
         }
     }
 
+    public void asignarSplit(String paqueteId, AsignacionPaquete asignacion, boolean fueraDePlazo, int cantidadAsignada) {
+        asignacionesSplit.put(paqueteId, asignacion);
+        rutasAsignadas.put(paqueteId, asignacion.getMejorRuta());
+        paquetesNoAsignados.remove(paqueteId);
+        maletasAsignadas += cantidadAsignada;
+        if (fueraDePlazo) {
+            maletasFueraDePlazo += cantidadAsignada;
+        }
+    }
+
     public void marcarNoAsignado(String paqueteId, boolean porColapso) {
         rutasAsignadas.remove(paqueteId);
+        asignacionesSplit.remove(paqueteId);
         paquetesNoAsignados.add(paqueteId);
         if (porColapso) {
             eventosColapso++;

@@ -106,6 +106,17 @@ public class EstadoOperacional {
             Dataset datos,
             Config_Simulacion config
     ) {
+        return puedeReservarRuta(paquete, ruta, creacionUtc, datos, config, paquete.getCantidad());
+    }
+
+    public boolean puedeReservarRuta(
+            Paquete paquete,
+            Ruta ruta,
+            LocalDateTime creacionUtc,
+            Dataset datos,
+            Config_Simulacion config,
+            int cantidad
+    ) {
         Aeropuerto aeropuertoActual = datos.getAeropuerto(paquete.getOrigenOACI());
         if (aeropuertoActual == null) {
             aeropuertoActual = datos.getAeropuerto(config.getAeropuertoHub());
@@ -125,8 +136,8 @@ public class EstadoOperacional {
             Duration esperaRequerida = i == 0 ? Duration.ZERO : conexionMinima;
             if (salida.isBefore(instanteActual.plus(esperaRequerida))) return false;
 
-            if (!puedeReservarIntervalo(aeropuertoActual, instanteActual, salida, paquete.getCantidad())) return false;
-            if (!puedeReservarVuelo(vuelo, paquete.getCantidad())) return false;
+            if (!puedeReservarIntervalo(aeropuertoActual, instanteActual, salida, cantidad)) return false;
+            if (!puedeReservarVuelo(vuelo, cantidad)) return false;
 
             aeropuertoActual = vuelo.getDestino();
             instanteActual = vuelo.getLlegadaUtc();
@@ -141,6 +152,17 @@ public class EstadoOperacional {
             LocalDateTime creacionUtc,
             Dataset datos,
             Config_Simulacion config
+    ) {
+        return reservarRutaSiFactible(paquete, ruta, creacionUtc, datos, config, paquete.getCantidad());
+    }
+
+    public boolean reservarRutaSiFactible(
+            Paquete paquete,
+            Ruta ruta,
+            LocalDateTime creacionUtc,
+            Dataset datos,
+            Config_Simulacion config,
+            int cantidad
     ) {
         Aeropuerto aeropuertoActual = datos.getAeropuerto(paquete.getOrigenOACI());
         if (aeropuertoActual == null) {
@@ -170,10 +192,10 @@ public class EstadoOperacional {
                 return false;
             }
 
-            if (!puedeReservarIntervalo(aeropuertoActual, instanteActual, salida, paquete.getCantidad())) {
+            if (!puedeReservarIntervalo(aeropuertoActual, instanteActual, salida, cantidad)) {
                 return false;
             }
-            if (!puedeReservarVuelo(vuelo, paquete.getCantidad())) {
+            if (!puedeReservarVuelo(vuelo, cantidad)) {
                 return false;
             }
 
@@ -194,12 +216,95 @@ public class EstadoOperacional {
         }
         instanteActual = creacionUtc;
         for (Vuelo vuelo : vuelos) {
-            reservarIntervalo(aeropuertoActual, instanteActual, vuelo.getSalidaUtc(), paquete.getCantidad());
-            reservarVuelo(vuelo, paquete.getCantidad());
+            reservarIntervalo(aeropuertoActual, instanteActual, vuelo.getSalidaUtc(), cantidad);
+            reservarVuelo(vuelo, cantidad);
             aeropuertoActual = vuelo.getDestino();
             instanteActual = vuelo.getLlegadaUtc();
         }
 
         return true;
+    }
+
+    public int capacidadResidualRuta(
+            Paquete paquete,
+            Ruta ruta,
+            LocalDateTime creacionUtc,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        Aeropuerto aeropuertoActual = datos.getAeropuerto(paquete.getOrigenOACI());
+        if (aeropuertoActual == null) {
+            aeropuertoActual = datos.getAeropuerto(config.getAeropuertoHub());
+        }
+        if (aeropuertoActual == null) return 0;
+
+        LocalDateTime instanteActual = creacionUtc;
+        List<Vuelo> vuelos = ruta.getVuelos();
+        if (vuelos.isEmpty()) return 0;
+
+        Duration conexionMinima = config.getMinimaConexion();
+        int minCap = Integer.MAX_VALUE;
+
+        for (int i = 0; i < vuelos.size(); i++) {
+            Vuelo vuelo = vuelos.get(i);
+            if (!vuelo.getOrigen().getCodigoOACI().equals(aeropuertoActual.getCodigoOACI())) return 0;
+
+            LocalDateTime salida = vuelo.getSalidaUtc();
+            Duration esperaRequerida = i == 0 ? Duration.ZERO : conexionMinima;
+            if (salida.isBefore(instanteActual.plus(esperaRequerida))) return 0;
+
+            int capAeropuerto = capacidadResidualIntervalo(aeropuertoActual, instanteActual, salida);
+            minCap = Math.min(minCap, capAeropuerto);
+
+            int capVuelo = capacidadResidualVuelo(vuelo);
+            minCap = Math.min(minCap, capVuelo);
+
+            aeropuertoActual = vuelo.getDestino();
+            instanteActual = vuelo.getLlegadaUtc();
+        }
+
+        if (!aeropuertoActual.getCodigoOACI().equals(paquete.getDestinoOACI())) return 0;
+        return minCap == Integer.MAX_VALUE ? 0 : minCap;
+    }
+
+    private int capacidadResidualIntervalo(Aeropuerto aeropuerto, LocalDateTime inicioIncl, LocalDateTime finExcl) {
+        if (!finExcl.isAfter(inicioIncl)) return Integer.MAX_VALUE;
+        int min = Integer.MAX_VALUE;
+        LocalDateTime hora = inicioIncl.truncatedTo(ChronoUnit.HOURS);
+        while (hora.isBefore(finExcl)) {
+            int actual = getOcupacionHora(aeropuerto.getCodigoOACI(), hora);
+            int libre = aeropuerto.getCapacidadMaxima() - actual;
+            min = Math.min(min, libre);
+            hora = hora.plusHours(1);
+        }
+        return min;
+    }
+
+    private int capacidadResidualVuelo(Vuelo vuelo) {
+        int actual = cargaPorVuelo.getOrDefault(vuelo.getId(), 0);
+        return vuelo.getCapacidadCarga() - actual;
+    }
+
+    public void liberarRuta(
+            Paquete paquete,
+            Ruta ruta,
+            LocalDateTime creacionUtc,
+            Dataset datos,
+            Config_Simulacion config,
+            int cantidad
+    ) {
+        Aeropuerto aeropuertoActual = datos.getAeropuerto(paquete.getOrigenOACI());
+        if (aeropuertoActual == null) {
+            aeropuertoActual = datos.getAeropuerto(config.getAeropuertoHub());
+        }
+        if (aeropuertoActual == null) return;
+
+        LocalDateTime instanteActual = creacionUtc;
+        for (Vuelo vuelo : ruta.getVuelos()) {
+            reservarIntervalo(aeropuertoActual, instanteActual, vuelo.getSalidaUtc(), -cantidad);
+            reservarVuelo(vuelo, -cantidad);
+            aeropuertoActual = vuelo.getDestino();
+            instanteActual = vuelo.getLlegadaUtc();
+        }
     }
 }

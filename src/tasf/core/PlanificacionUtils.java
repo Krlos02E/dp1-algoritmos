@@ -89,6 +89,28 @@ public final class PlanificacionUtils {
         return estado;
     }
 
+    public static EstadoOperacional construirEstadoConAsignacionesSplit(
+            Map<String, AsignacionPaquete> propuesta,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        EstadoOperacional estado = new EstadoOperacional();
+        List<Paquete> ordenados = new ArrayList<>(datos.getPaquetes());
+        ordenados.sort(Comparator.comparing(p -> getCreacionUtc(p, datos, config)));
+
+        for (Paquete paquete : ordenados) {
+            AsignacionPaquete asignacion = propuesta.get(paquete.getId());
+            if (asignacion == null || asignacion.isEmpty()) continue;
+
+            LocalDateTime creacionUtc = getCreacionUtc(paquete, datos, config);
+            for (RutaConCantidad rc : asignacion.getRutas()) {
+                estado.reservarRutaSiFactible(paquete, rc.getRuta(), creacionUtc, datos, config, rc.getCantidad());
+            }
+        }
+
+        return estado;
+    }
+
     public static Solucion evaluarAsignacion(
             String estrategia,
             Map<String, Ruta> propuesta,
