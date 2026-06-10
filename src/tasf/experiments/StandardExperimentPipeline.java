@@ -16,6 +16,8 @@ import tasf.strategy.TwoPhaseOrchestrator;
 import tasf.strategy.flow.MinCostFlowAsignador;
 import tasf.model.ResultadoEnvio;
 
+import tasf.util.Log;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -112,6 +114,10 @@ public final class StandardExperimentPipeline {
     public PipelineResult ejecutar() throws IOException {
         long tPipeline = System.nanoTime();
         PlanificacionUtils.limpiarCacheGlobal();
+
+        Path outputDir = dataDir.resolve("output");
+        Files.createDirectories(outputDir);
+        Log.init(outputDir);
 
         // Cargar aeropuertos para conversión a UTC en escaneo liviano
         Path carpetaDatos = dataDir.toAbsolutePath().normalize();
@@ -437,7 +443,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                 double porcentajeExito = totalEnvios == 0 ? 0.0 : (100.0 * asignados) / totalEnvios;
 
                 if (maletasFueraDePlazo > 0) {
-                    System.out.println("  [DIAG] FUERA DE PLAZO detected: " + maletasFueraDePlazo + " maletas");
+                    Log.detail("  [DIAG] FUERA DE PLAZO detected: " + maletasFueraDePlazo + " maletas");
                     diagnosticarPaquetes(datasetDia, solucion, config);
                 }
 
@@ -469,8 +475,6 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
 
         }
 
-        Path outputDir = dataDir.resolve("output");
-        Files.createDirectories(outputDir);
         String stamp = LocalDateTime.now().format(FILE_TS);
 
         long msTotal = (System.nanoTime() - tPipeline) / 1_000_000;
@@ -521,6 +525,8 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                 "[4/4] Log: %s [%dms]",
                 jsonLog.getFileName(), msTotal));
 
+        Log.close();
+
         return new PipelineResult(
                 totalPaquetes, totalMaletas, maletasAsignadas, pedidosAsignados,
                 sinAsignar, fueraDePlazo, hayColapso, costoTotal, duracionMs);
@@ -547,12 +553,12 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         }
 
         if (!sinAsignar.isEmpty()) {
-            System.out.println("  [DIAG] NO ASIGNADOS (" + sinAsignar.size() + "):");
+            Log.detail("  [DIAG] NO ASIGNADOS (" + sinAsignar.size() + "):");
             for (Paquete p : sinAsignar) {
                 String origen = p.getOrigenOACI();
                 String destino = p.getDestinoOACI();
                 int saltosMin = datasetDia.distanciaEnSaltos(origen, destino);
-                System.out.println(String.format(Locale.ROOT,
+                Log.detail(String.format(Locale.ROOT,
                         "    %s | %s→%s | cant=%d | saltos_min=%d",
                         p.getId(), origen, destino, p.getCantidad(),
                         saltosMin == Integer.MAX_VALUE ? -1 : saltosMin));
@@ -560,7 +566,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         }
 
         if (!fueraPlazo.isEmpty()) {
-            System.out.println("  [DIAG] FUERA DE PLAZO (" + fueraPlazo.size() + "):");
+            Log.detail("  [DIAG] FUERA DE PLAZO (" + fueraPlazo.size() + "):");
             for (Paquete p : fueraPlazo) {
                 Ruta ruta = asignadas.get(p.getId());
                 LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datasetDia, config);
@@ -569,7 +575,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                 LocalDateTime llegada = ruta.getLlegadaUtc();
                 long retrasoMin = Duration.between(deadline, llegada).toMinutes();
                 boolean mismoContinente = plazo.equals(config.getPlazoMismoContinente());
-                System.out.println(String.format(Locale.ROOT,
+                Log.detail(String.format(Locale.ROOT,
                         "    %s | %s→%s | cant=%d | escalas=%d | creado=%s | deadline=%s | llega=%s | retraso=%dm | %s",
                         p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad(),
                         ruta.getCantidadSaltos(),
@@ -577,12 +583,9 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                         retrasoMin,
                         mismoContinente ? "MISMO_CONTINENTE(24h)" : "INTERCONTINENTAL(48h)"));
 
-                // Mostrar ruta
-                System.out.print("      Ruta: ");
-                for (var v : ruta.getVuelos()) {
-                    System.out.print(v.getId() + "(" + v.getSalidaUtc().toString() + "→" + v.getLlegadaUtc().toString() + ") ");
-                }
-                System.out.println();
+                Log.detail("      Ruta: " + ruta.getVuelos().stream()
+                        .map(v -> v.getId() + "(" + v.getSalidaUtc().toString() + "→" + v.getLlegadaUtc().toString() + ")")
+                        .reduce((a, b) -> a + " " + b).orElse(""));
 
                 Map<String, Object> diagEntry = new LinkedHashMap<>();
                 diagEntry.put("pedidoId", p.getId());
@@ -668,7 +671,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             configAdaptativa.put("evaporacionFeromona", 0.3);
             configAdaptativa.put("porcentajeRuptura", 0.10);
             configAdaptativa.put("modo", "muchos_paquetes_y_vuelos");
-            System.out.println(String.format(Locale.ROOT,
+            Log.detail(String.format(Locale.ROOT,
                     "  [ADAPTATIVO] paquetes=%d vuelos=%d → ALNS=100, maxRutas=100, ruptura=10%%",
                     totalPaquetes, diasVuelos * 2866));
         } else if (muchosPaquetes) {
@@ -680,7 +683,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             configAdaptativa.put("maxRutasPorPaquete", 100);
             configAdaptativa.put("porcentajeRuptura", 0.10);
             configAdaptativa.put("modo", "muchos_paquetes");
-            System.out.println(String.format(Locale.ROOT,
+            Log.detail(String.format(Locale.ROOT,
                     "  [ADAPTATIVO] paquetes=%d → ALNS=100, maxRutas=100, ruptura=10%%",
                     totalPaquetes));
         } else {

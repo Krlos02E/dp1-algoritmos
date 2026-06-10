@@ -5,6 +5,7 @@ import tasf.model.Aeropuerto;
 import tasf.model.Paquete;
 import tasf.model.Ruta;
 import tasf.model.Vuelo;
+import tasf.util.Log;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -364,7 +365,7 @@ public final class PlanificacionUtils {
                     int completados = (idx + 1);
                     if (completados == total) {
                         long ms = (System.nanoTime() - t0) / 1_000_000;
-                        System.out.println(String.format(Locale.ROOT,
+                        Log.detail(String.format(Locale.ROOT,
                                 "  [RUTAS] %d/%d pares [%dms]",
                                 completados, total, ms));
                     }

@@ -12,6 +12,7 @@ import tasf.model.Paquete;
 import tasf.model.Ruta;
 import tasf.strategy.PlanificadorStrategy;
 import tasf.strategy.alns.operators.*;
+import tasf.util.Log;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -537,7 +538,7 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         }
 
         if (mejorados > 0) {
-            System.out.println("  [ALNS] forzarATiempo: " + mejorados + " paquetes reasignados");
+            Log.detail("  [ALNS] forzarATiempo: " + mejorados + " paquetes reasignados");
         }
         return propuesta;
     }
@@ -601,43 +602,43 @@ public class ALNS_Strategy implements PlanificadorStrategy {
         int total = sinCandidatas.size() + conCandidatasSinCapacidad.size() + parcialmenteAsignados.size() + sinConectividad.size();
         if (total == 0) return;
 
-        System.out.println("  [DIAG-ALNS] PAQUETES INCOMPLETOS: " + total);
+        Log.detail("  [DIAG-ALNS] PAQUETES INCOMPLETOS: " + total);
 
         if (!sinConectividad.isEmpty()) {
-            System.out.println("    [SIN CONECTIVIDAD] " + sinConectividad.size() + " paquetes (destino inalcanzable):");
+            Log.detail("    [SIN CONECTIVIDAD] " + sinConectividad.size() + " paquetes (destino inalcanzable):");
             for (Paquete p : sinConectividad) {
-                System.out.printf("      %s | %s→%s | cant=%d%n",
-                        p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad());
+                Log.detail(String.format("      %s | %s→%s | cant=%d%n",
+                        p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad()));
             }
         }
 
         if (!sinCandidatas.isEmpty()) {
-            System.out.println("    [SIN RUTAS CANDIDATAS] " + sinCandidatas.size() + " paquetes (rutas fuera de deadline o ventana):");
+            Log.detail("    [SIN RUTAS CANDIDATAS] " + sinCandidatas.size() + " paquetes (rutas fuera de deadline o ventana):");
             for (Paquete p : sinCandidatas) {
                 LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
                 Duration plazo = PlanificacionUtils.getPlazoObjetivo(p, datos, config);
-                System.out.printf("      %s | %s→%s | cant=%d | creado=%s | deadline=%s%n",
+                Log.detail(String.format("      %s | %s→%s | cant=%d | creado=%s | deadline=%s%n",
                         p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad(),
-                        creacion, creacion.plus(plazo));
+                        creacion, creacion.plus(plazo)));
             }
         }
 
         if (!conCandidatasSinCapacidad.isEmpty()) {
-            System.out.println("    [CON CANDIDATAS PERO SIN CAPACIDAD] " + conCandidatasSinCapacidad.size() + " paquetes:");
+            Log.detail("    [CON CANDIDATAS PERO SIN CAPACIDAD] " + conCandidatasSinCapacidad.size() + " paquetes:");
             for (Paquete p : conCandidatasSinCapacidad) {
                 List<Ruta> candidatas = candidatos.getOrDefault(p.getId(), EMPTY_RUTA_LIST);
-                System.out.printf("      %s | %s→%s | cant=%d | candidatas=%d%n",
-                        p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad(), candidatas.size());
+                Log.detail(String.format("      %s | %s→%s | cant=%d | candidatas=%d%n",
+                        p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad(), candidatas.size()));
             }
         }
 
         if (!parcialmenteAsignados.isEmpty()) {
-            System.out.println("    [PARCIALMENTE ASIGNADOS] " + parcialmenteAsignados.size() + " paquetes:");
+            Log.detail("    [PARCIALMENTE ASIGNADOS] " + parcialmenteAsignados.size() + " paquetes:");
             for (Paquete p : parcialmenteAsignados) {
                 AsignacionPaquete asignacion = propuesta.get(p.getId());
                 int asignado = asignacion != null ? asignacion.cantidadAsignada() : 0;
-                System.out.printf("      %s | %s→%s | cant=%d | asignado=%d | faltante=%d%n",
-                        p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad(), asignado, p.getCantidad() - asignado);
+                Log.detail(String.format("      %s | %s→%s | cant=%d | asignado=%d | faltante=%d%n",
+                        p.getId(), p.getOrigenOACI(), p.getDestinoOACI(), p.getCantidad(), asignado, p.getCantidad() - asignado));
             }
         }
     }
