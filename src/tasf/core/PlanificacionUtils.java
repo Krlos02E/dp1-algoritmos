@@ -33,8 +33,31 @@ public final class PlanificacionUtils {
         CACHE_GLOBAL_RUTAS = new ConcurrentHashMap<>();
     }
 
-    public static List<Ruta> obtenerRutasCache(String parOD) {
-        return CACHE_GLOBAL_RUTAS.getOrDefault(parOD, List.of());
+    public static List<Ruta> obtenerRutasCache(String parOD, LocalDateTime creacionUtc) {
+        return buscarSegmentoMasCercano(parOD, creacionUtc);
+    }
+
+    private static List<Ruta> buscarSegmentoMasCercano(String parOD, LocalDateTime creacionUtc) {
+        List<Ruta> mejor = List.of();
+        LocalDateTime mejorTiempo = null;
+        
+        String prefix = parOD + "|";
+        for (Map.Entry<String, List<Ruta>> entry : CACHE_GLOBAL_RUTAS.entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith(prefix)) {
+                String timestampStr = key.substring(prefix.length());
+                LocalDateTime timestamp = LocalDateTime.parse(timestampStr);
+                
+                if (!timestamp.isAfter(creacionUtc)) {
+                    if (mejorTiempo == null || timestamp.isAfter(mejorTiempo)) {
+                        mejorTiempo = timestamp;
+                        mejor = entry.getValue();
+                    }
+                }
+            }
+        }
+        
+        return mejor;
     }
 
     public static LocalDateTime getCreacionUtc(Paquete paquete, Dataset datos, Config_Simulacion config) {
@@ -327,36 +350,57 @@ public final class PlanificacionUtils {
     ) {
         Map<String, List<Ruta>> candidatos = new HashMap<>();
 
-        // Paso 1: Identificar pares origen-destino que necesitan búsqueda
-        Set<String> paresPendientes = new HashSet<>();
-        Map<String, LocalDateTime> primerCreacionPorPar = new HashMap<>();
+        // Paso 1: Calcular min/max creacionUtc por par OD
+        Map<String, LocalDateTime> minCreacionPorPar = new HashMap<>();
+        Map<String, LocalDateTime> maxCreacionPorPar = new HashMap<>();
+        
         for (Paquete paquete : datos.getPaquetes()) {
             String key = paquete.getOrigenOACI() + "|" + paquete.getDestinoOACI();
-            if (!CACHE_GLOBAL_RUTAS.containsKey(key)) {
-                paresPendientes.add(key);
-                primerCreacionPorPar.putIfAbsent(key, getCreacionUtc(paquete, datos, config));
+            LocalDateTime creacion = getCreacionUtc(paquete, datos, config);
+            
+            minCreacionPorPar.merge(key, creacion, (a, b) -> a.isBefore(b) ? a : b);
+            maxCreacionPorPar.merge(key, creacion, (a, b) -> a.isAfter(b) ? a : b);
+        }
+
+        // Paso 2: Generar puntos temporales cada 24h cubriendo todo el rango
+        Set<String> tareasBusqueda = new HashSet<>();
+        Map<String, LocalDateTime> creacionPorTarea = new HashMap<>();
+        Map<String, String> parODPorTarea = new HashMap<>();
+
+        for (String par : minCreacionPorPar.keySet()) {
+            LocalDateTime min = minCreacionPorPar.get(par);
+            LocalDateTime max = maxCreacionPorPar.get(par);
+            
+            LocalDateTime actual = min;
+            while (!actual.isAfter(max)) {
+                String tareaKey = par + "|" + actual.toString();
+                if (!CACHE_GLOBAL_RUTAS.containsKey(tareaKey)) {
+                    tareasBusqueda.add(tareaKey);
+                    creacionPorTarea.put(tareaKey, actual);
+                    parODPorTarea.put(tareaKey, par);
+                }
+                actual = actual.plusHours(24);
             }
         }
 
-        // Paso 2: Buscar rutas pendientes en paralelo
-        // Buscar MUCHAS rutas por par OD para máxima diversidad temporal
-        if (!paresPendientes.isEmpty()) {
-            int hilos = Math.min(Runtime.getRuntime().availableProcessors(), paresPendientes.size());
+        // Paso 3: Búsqueda paralela de rutas para cada punto temporal
+        if (!tareasBusqueda.isEmpty()) {
+            int hilos = Math.min(Runtime.getRuntime().availableProcessors(), tareasBusqueda.size());
             ExecutorService pool = Executors.newFixedThreadPool(hilos);
-            final int total = paresPendientes.size();
+            final int total = tareasBusqueda.size();
             final long t0 = System.nanoTime();
 
-            // Buscar más rutas que las necesarias: filtrar después por paquete
             int rutasPorPar = Math.max(config.getMaxRutasPorPaquete() * 5, 200);
 
-            List<String> paresLista = new ArrayList<>(paresPendientes);
-            for (int i = 0; i < paresLista.size(); i++) {
+            List<String> tareasLista = new ArrayList<>(tareasBusqueda);
+            for (int i = 0; i < tareasLista.size(); i++) {
                 final int idx = i;
-                final String par = paresLista.get(i);
+                final String tareaKey = tareasLista.get(i);
                 pool.submit(() -> {
-                    String[] partes = par.split("\\|");
-                    LocalDateTime creacionUtc = primerCreacionPorPar.getOrDefault(par,
-                            LocalDateTime.of(2026, 1, 1, 0, 0));
+                    String parOD = parODPorTarea.get(tareaKey);
+                    String[] partes = parOD.split("\\|");
+                    LocalDateTime creacionUtc = creacionPorTarea.get(tareaKey);
+                    
                     List<Ruta> rutas = finder.buscarRutas(
                             partes[0], partes[1], creacionUtc,
                             rutasPorPar,
@@ -364,13 +408,13 @@ public final class PlanificacionUtils {
                             config.getMinimaConexion(),
                             config.getHorizonteBusqueda()
                     );
-                    CACHE_GLOBAL_RUTAS.put(par, rutas);
+                    CACHE_GLOBAL_RUTAS.put(tareaKey, rutas);
 
                     int completados = (idx + 1);
                     if (completados == total) {
                         long ms = (System.nanoTime() - t0) / 1_000_000;
                         Log.detail(String.format(Locale.ROOT,
-                                "  [RUTAS] %d/%d pares [%dms]",
+                                "  [RUTAS] %d/%d segmentos temporales [%dms]",
                                 completados, total, ms));
                     }
                 });
@@ -380,12 +424,12 @@ public final class PlanificacionUtils {
             catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         }
 
-        // Paso 3: Para CADA paquete, filtrar rutas cacheadas por su tiempo de creacion
-        // y seleccionar hasta maxRutasPorPaquete
+        // Paso 4: Para CADA paquete, buscar el segmento más cercano y filtrar rutas
         for (Paquete paquete : datos.getPaquetes()) {
             LocalDateTime creacionUtc = getCreacionUtc(paquete, datos, config);
-            String key = paquete.getOrigenOACI() + "|" + paquete.getDestinoOACI();
-            List<Ruta> cacheadas = CACHE_GLOBAL_RUTAS.get(key);
+            String parOD = paquete.getOrigenOACI() + "|" + paquete.getDestinoOACI();
+            
+            List<Ruta> cacheadas = buscarSegmentoMasCercano(parOD, creacionUtc);
 
             if (cacheadas == null || cacheadas.isEmpty()) {
                 candidatos.put(paquete.getId(), List.of());
@@ -405,7 +449,6 @@ public final class PlanificacionUtils {
                 if (filtradas.size() >= config.getMaxRutasPorPaquete()) break;
             }
 
-            // Si no hay rutas dentro del deadline, NO usar rutas tardías
             if (filtradas.isEmpty()) {
                 candidatos.put(paquete.getId(), List.of());
                 continue;

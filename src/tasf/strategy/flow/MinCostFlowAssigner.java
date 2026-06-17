@@ -169,7 +169,7 @@ public class MinCostFlowAssigner {
             LocalDateTime creacionUtc = PlanificacionUtils.getCreacionUtc(p, datos, config);
             String key = p.getOrigenOACI() + "|" + p.getDestinoOACI();
             
-            List<Ruta> cacheadas = PlanificacionUtils.obtenerRutasCache(key);
+            List<Ruta> cacheadas = PlanificacionUtils.obtenerRutasCache(key, creacionUtc);
             List<Ruta> filtradas = filtrarRutasPorPaquete(cacheadas, creacionUtc, p, datos, config);
             
             if (filtradas.size() >= minRutasCache) {
