@@ -38,7 +38,9 @@ public class Main {
                     parametros.duracionEnvios,
                     parametros.fechaEnviosRangoInicio,
                     parametros.fechaEnviosRangoFin,
-                    algoritmos
+                    algoritmos,
+                    parametros.iteracionesAlns,
+                    parametros.maxRutas
             );
 
             StandardExperimentPipeline.PipelineResult resultado = pipeline.ejecutar();
@@ -71,6 +73,8 @@ public class Main {
         private final LocalDate fechaEnviosRangoFin;
         private final long semillaALNS;
         private final String algoritmo;
+        private final int iteracionesAlns;
+        private final int maxRutas;
 
         private static int calcularDiasVuelosAutomatico() {
             Duration plazoIntercontinental = Duration.ofHours(48);
@@ -94,7 +98,9 @@ public class Main {
                 LocalDate fechaEnviosRangoInicio,
                 LocalDate fechaEnviosRangoFin,
                 long semillaALNS,
-                String algoritmo
+                String algoritmo,
+                int iteracionesAlns,
+                int maxRutas
         ) {
             this.dataDir = dataDir;
             this.fechaInicioVuelos = fechaInicioVuelos;
@@ -108,6 +114,8 @@ public class Main {
             this.fechaEnviosRangoFin = fechaEnviosRangoFin;
             this.semillaALNS = semillaALNS;
             this.algoritmo = algoritmo;
+            this.iteracionesAlns = iteracionesAlns;
+            this.maxRutas = maxRutas;
         }
 
         private static ParametrosCli desdeArgs(String[] args) {
@@ -123,6 +131,8 @@ public class Main {
             LocalDate fechaEnviosRangoFin = null;
             long semillaALNS = 17L;
             String algoritmo = "ALNS";
+            int iteracionesAlns = -1;
+            int maxRutas = -1;
             boolean diasVuelosEspecificado = false;
 
             for (String arg : args) {
@@ -192,6 +202,10 @@ public class Main {
                     semillaALNS = Long.parseLong(arg.substring("--semilla-alns=".length()));
                 } else if (arg.startsWith("--algoritmo=")) {
                     algoritmo = arg.substring("--algoritmo=".length()).trim();
+                } else if (arg.startsWith("--iteraciones-alns=")) {
+                    iteracionesAlns = Integer.parseInt(arg.substring("--iteraciones-alns=".length()));
+                } else if (arg.startsWith("--max-rutas=")) {
+                    maxRutas = Integer.parseInt(arg.substring("--max-rutas=".length()));
                 }
             }
 
@@ -218,7 +232,9 @@ public class Main {
                       fechaEnviosRangoInicio,
                       fechaEnviosRangoFin,
                       semillaALNS,
-                      algoritmo
+                      algoritmo,
+                      iteracionesAlns,
+                      maxRutas
               );
         }
     }

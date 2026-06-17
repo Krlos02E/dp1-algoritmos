@@ -63,6 +63,8 @@ public final class StandardExperimentPipeline {
     private final LocalDate fechaEnviosRangoInicio;
     private final LocalDate fechaEnviosRangoFin;
     private final List<AlgorithmSpec> algoritmos;
+    private final int iteracionesAlnsOverride;
+    private final int maxRutasOverride;
 
     // Tracking fields for JSON log
     private String tipoSeleccionFecha = "";
@@ -82,7 +84,9 @@ public final class StandardExperimentPipeline {
             int duracionEnvios,
             LocalDate fechaEnviosRangoInicio,
             LocalDate fechaEnviosRangoFin,
-            List<AlgorithmSpec> algoritmos
+            List<AlgorithmSpec> algoritmos,
+            int iteracionesAlnsOverride,
+            int maxRutasOverride
     ) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir no puede ser null");
         this.fechaInicioVuelos = Objects.requireNonNull(fechaInicioVuelos, "fechaInicioVuelos no puede ser null");
@@ -98,6 +102,8 @@ public final class StandardExperimentPipeline {
             throw new IllegalArgumentException("Debe haber al menos un algoritmo");
         }
         this.algoritmos = List.copyOf(algoritmos);
+        this.iteracionesAlnsOverride = iteracionesAlnsOverride;
+        this.maxRutasOverride = maxRutasOverride;
     }
 
     /** Devuelve los dias de horizonte de busqueda usados en config adaptativa */
@@ -689,6 +695,16 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         } else {
             configAdaptativa.put("modo", "default");
         }
+
+        if (iteracionesAlnsOverride > 0) {
+            config.setIteracionesALNS(iteracionesAlnsOverride);
+            configAdaptativa.put("iteracionesALNS", iteracionesAlnsOverride);
+        }
+        if (maxRutasOverride > 0) {
+            config.setMaxRutasPorPaquete(maxRutasOverride);
+            configAdaptativa.put("maxRutasPorPaquete", maxRutasOverride);
+        }
+
         return config;
     }
 
