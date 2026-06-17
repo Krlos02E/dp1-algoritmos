@@ -262,8 +262,8 @@ Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles comp
   },
   "configuracion": {
     "modo": "default",
-    "iteracionesALNS": 20,
-    "maxRutasPorPaquete": 4,
+    "iteracionesALNS": 15,
+    "maxRutasPorPaquete": 5,
     "maxEscalas": 2,
     "horizonteBusquedaHoras": 72,
     "evaporacionFeromona": 0.40,
@@ -277,7 +277,7 @@ Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles comp
 ### Log TXT (`data/output/log_detalle_YYYYMMDD_HHMMSS.txt`)
 
 ```
-[CONFIG ADAPTATIVA] modo=default | paquetes=52 | iteraciones=20, maxRutas=4, ruptura=15%, evaporacion=0.40
+[CONFIG ADAPTATIVA] modo=default | paquetes=52 | iteraciones=15, maxRutas=5, ruptura=15%, evaporacion=0.40
 [BUSQUEDA RUTAS] 52 tareas de busqueda paralela completadas [653ms]
 === FASES DEL PIPELINE ===
 
@@ -287,9 +287,9 @@ FASE 1 - Planificacion de Rutas (ALNS metaheuristico)
   Resultados:   52/52 paquetes obtuvieron ruta
 
 FASE 2 - Validacion y Asignacion (MinCostFlow determinista)
-  Descripcion:  Valida capacidad, ocupacion y ventanas temporales. Busca alternativas si la ruta no es factible.
+  Descripcion:  Valida capacidad, ocupacion y ventanas temporales. Busca alternativas si la ruta no es factible. Asigna paquetes sin ruta de Fase 1.
   Tiempo:       4 ms
-  Resultados:   52/52 rutas aceptadas
+  Resultados:   52/52 paquetes con ruta final
 
 FASE 3 - Evaluacion Final
   Descripcion:  Calculo de costo: noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horasAcumuladas

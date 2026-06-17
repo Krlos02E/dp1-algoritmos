@@ -55,10 +55,13 @@ data/output/
 
 Cada log JSON contiene:
 - **metadata**: algoritmo, tipo de selección de fecha, fecha seleccionada, métricas (maletas totales/asignadas, pedidos, colapso, costo, duración)
+- **fases**: desglose de las 3 fases del pipeline (planificación ALNS, validación MinCostFlow, evaluación final) con tiempos y resultados
 - **escaneo**: información del escaneo de días (solo en modo `--fecha-envios=max`)
 - **configuracion**: parámetros adaptativos usados (iteraciones ALNS, maxRutas, evaporación, etc.)
 - **diagnosticoFueraDePlazo**: detalle de cada paquete fuera de plazo con ruta completa y retraso (solo si hay paquetes fuera de plazo)
 - **asignaciones**: lista de paquetes asignados con su ruta, vuelos, creación, deadline y tiempos
+
+Adicionalmente, se genera un log TXT de diagnóstico detallado en `data/output/log_detalle_YYYYMMDD_HHMMSS.txt` con información de cada fase del pipeline.
 
 ---
 
@@ -126,11 +129,18 @@ java -cp out tasf.app.Main --max-envios=100
 | `--dias-vuelos` | `3` | Cantidad de días a cargar; `0` = cargar todos disponibles (~1095 días) |
 | `--max-envios` | `0` (todos) | Límite de envíos por archivo; `0` = sin límite |
 | `--fecha-envios` | `max` | Selecciona un día: índice (`5`), fecha (`2026-01-06`), o `max` |
-| `--duracion-envios` | `1` | Días consecutivos de envíos |
+| `--duracion-envios` | `5` | Días consecutivos de envíos |
+| `--iteraciones-alns` | `15` | Número de iteraciones del algoritmo ALNS |
+| `--max-rutas` | `5` | Máximo de rutas candidatas por paquete |
 | `--rango-envios` | - | Rango: `2026-01-01:2026-01-07` o índice `3-7` |
 | `--semilla-alns` | `17` | Semilla aleatoria para ALNS |
 
 **Nota**: cuando se usa `--fecha-envios` o `--rango-envios` sin `--dias-vuelos`, la ventana de vuelos se calcula automáticamente a 3 días.
+
+**Nota sobre parámetros visibles**: Al ejecutar, la terminal muestra los parámetros activos:
+```
+[2/4] ALNS | semilla=17 | iteraciones=15 | maxRutas=5 | duracion=5 dias | vuelos=3 dias
+```
 
 ---
 

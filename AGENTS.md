@@ -61,6 +61,7 @@ cost = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + hor
 - `--rango-envios=2026-01-01:2026-01-07` → explicit date range (processes all packages in range).
 - `--rango-envios=3-7` → index-based range (days relative to `fechaInicioVuelos`).
 - When `--fecha-envios` or `--rango-envios` is used without `--dias-vuelos`, the flight window is auto-calculated to 3 days.
+- **Terminal output**: Parameters are displayed at runtime: `[2/4] ALNS | semilla=17 | iteraciones=15 | maxRutas=5 | duracion=5 dias | vuelos=3 dias`
 
 ## Adding a new metaheuristic
 
@@ -76,10 +77,13 @@ cost = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + hor
 Logs are written to `data/output/log_YYYYMMDD_HHMMSS.json` with these sections:
 
 - **metadata**: algorithm, date selection type (`rango`, `fecha_fija`, `dia_maximo`, `rango_indice`, `dia_indice`), selected date display, totals, cost, duration
+- **fases**: breakdown of the 3 pipeline phases (ALNS planning, MinCostFlow validation, final evaluation) with timings and results
 - **escaneo**: scan info (days scanned, scan time, total shipments) — only in `dia_maximo` mode
 - **configuracion**: adaptive config (mode, iterations, evaporation, etc.)
 - **diagnosticoFueraDePlazo**: detailed breakdown of late packages with full route — only when there are late packages
 - **asignaciones**: list of assigned packages with route and flight details
+
+Additionally, a detailed diagnostic text log is generated at `data/output/log_detalle_YYYYMMDD_HHMMSS.txt` with phase-by-phase information.
 
 ## Gotchas
 

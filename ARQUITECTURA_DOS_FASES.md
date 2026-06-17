@@ -180,7 +180,9 @@ La configuración activa del pipeline se concentra en `Main` y `StandardExperime
 | `--dias-vuelos` | `3` | Días de vuelos; `0` = todos (~1095 días) |
 | `--max-envios` | `0` | Límite de envíos por archivo |
 | `--fecha-envios` | `max` | Índice (`5`), fecha (`2026-01-06`), o `max` |
-| `--duracion-envios` | `1` | Días consecutivos de envíos |
+| `--duracion-envios` | `5` | Días consecutivos de envíos |
+| `--iteraciones-alns` | `15` | Número de iteraciones del algoritmo ALNS |
+| `--max-rutas` | `5` | Máximo de rutas candidatas por paquete |
 | `--rango-envios` | - | `2026-01-01:2026-01-07` o índice `3-7` |
 | `--semilla-alns` | `17` | Semilla para ALNS |
 
