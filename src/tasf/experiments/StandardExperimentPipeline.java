@@ -440,6 +440,24 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                 Solucion solucion = ejecutarAlgoritmo(algoritmo, datasetDia, config);
                 long duracionMs = (System.nanoTime() - t0) / 1_000_000;
 
+                Map<String, Double> metricas = solucion.getMetricas();
+                Log.detail("=== FASES DEL PIPELINE ===");
+                Log.detail("Fase 1 - Planificacion de Rutas (ALNS metaheuristico):");
+                Log.detail("  Tiempo:                   " + metricas.getOrDefault("msFase1Rutas", 0.0).longValue() + " ms");
+                Log.detail("  Descripcion:              Genera rutas candidatas para cada paquete usando busqueda adaptativa");
+                Log.detail("");
+                Log.detail("Fase 2 - Validacion y Asignacion (MinCostFlow determinista):");
+                Log.detail("  Tiempo:                   " + metricas.getOrDefault("msFase2Asignacion", 0.0).longValue() + " ms");
+                Log.detail("  Rutas planificadas:       " + metricas.getOrDefault("paquetesConRutaSeleccionada", 0.0).intValue());
+                Log.detail("  Rutas aceptadas:          " + metricas.getOrDefault("rutasAceptadasFase2", 0.0).intValue());
+                Log.detail("  Rutas rechazadas:         " + (metricas.getOrDefault("paquetesConRutaSeleccionada", 0.0).intValue() - metricas.getOrDefault("rutasAceptadasFase2", 0.0).intValue()));
+                Log.detail("  Descripcion:              Valida capacidad y ventanas temporales. Rechaza rutas inviables.");
+                Log.detail("");
+                Log.detail("Fase 3 - Evaluacion Final (Calculo de costos):");
+                Log.detail("  Tiempo:                   " + metricas.getOrDefault("msFase3Evaluacion", 0.0).longValue() + " ms");
+                Log.detail("  Descripcion:              Calcula costo final: noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horas");
+                Log.detail("==========================");
+
                 List<ResultadoEnvio> resultados = construirResultadosEnvio(datasetDia, solucion, config);
                 boolean colapso = ColapsoDetector.hayColapso(resultados);
                 int totalEnvios = datasetDia.getPaquetes().size();
@@ -910,6 +928,29 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         json.append("    \"duracionMs\": ").append(duracionMs).append(",\n");
         json.append("    \"generado\": \"").append(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)).append("\"\n");
         json.append("  },\n");
+
+        if (solucion != null) {
+            Map<String, Double> metricas = solucion.getMetricas();
+            int rutasPlanificadas = metricas.getOrDefault("paquetesConRutaSeleccionada", 0.0).intValue();
+            int rutasAceptadas = metricas.getOrDefault("rutasAceptadasFase2", 0.0).intValue();
+            json.append("  \"fases\": {\n");
+            json.append("    \"fase1_planificacion\": {\n");
+            json.append("      \"descripcion\": \"Planificacion de rutas con metaheuristico ALNS\",\n");
+            json.append("      \"tiempoMs\": ").append(metricas.getOrDefault("msFase1Rutas", 0.0).longValue()).append("\n");
+            json.append("    },\n");
+            json.append("    \"fase2_validacion\": {\n");
+            json.append("      \"descripcion\": \"Validacion determinista de capacidad y ventanas temporales\",\n");
+            json.append("      \"tiempoMs\": ").append(metricas.getOrDefault("msFase2Asignacion", 0.0).longValue()).append(",\n");
+            json.append("      \"rutasPlanificadas\": ").append(rutasPlanificadas).append(",\n");
+            json.append("      \"rutasAceptadas\": ").append(rutasAceptadas).append(",\n");
+            json.append("      \"rutasRechazadas\": ").append(rutasPlanificadas - rutasAceptadas).append("\n");
+            json.append("    },\n");
+            json.append("    \"fase3_evaluacion\": {\n");
+            json.append("      \"descripcion\": \"Calculo de costo final (noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horas)\",\n");
+            json.append("      \"tiempoMs\": ").append(metricas.getOrDefault("msFase3Evaluacion", 0.0).longValue()).append("\n");
+            json.append("    }\n");
+            json.append("  },\n");
+        }
 
         if (!escaneoInfo.isEmpty()) {
             json.append("  \"escaneo\": {\n");
