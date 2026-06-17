@@ -40,7 +40,8 @@ public class Main {
                     parametros.fechaEnviosRangoFin,
                     algoritmos,
                     parametros.iteracionesAlns,
-                    parametros.maxRutas
+                    parametros.maxRutas,
+                    parametros.semillaALNS
             );
 
             StandardExperimentPipeline.PipelineResult resultado = pipeline.ejecutar();
@@ -126,13 +127,13 @@ public class Main {
             LocalDate fechaEnviosFiltro = null;
             boolean usarDiaMaximoEnvios = false;
             int fechaEnviosDia = 0;
-            int duracionEnvios = 1;
             LocalDate fechaEnviosRangoInicio = null;
             LocalDate fechaEnviosRangoFin = null;
             long semillaALNS = 17L;
             String algoritmo = "ALNS";
-            int iteracionesAlns = -1;
-            int maxRutas = -1;
+            int iteracionesAlns = 15;
+            int maxRutas = 5;
+            int duracionEnvios = 5;
             boolean diasVuelosEspecificado = false;
 
             for (String arg : args) {

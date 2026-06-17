@@ -65,6 +65,7 @@ public final class StandardExperimentPipeline {
     private final List<AlgorithmSpec> algoritmos;
     private final int iteracionesAlnsOverride;
     private final int maxRutasOverride;
+    private final long semillaALNS;
 
     // Tracking fields for JSON log
     private String tipoSeleccionFecha = "";
@@ -86,7 +87,8 @@ public final class StandardExperimentPipeline {
             LocalDate fechaEnviosRangoFin,
             List<AlgorithmSpec> algoritmos,
             int iteracionesAlnsOverride,
-            int maxRutasOverride
+            int maxRutasOverride,
+            long semillaALNS
     ) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir no puede ser null");
         this.fechaInicioVuelos = Objects.requireNonNull(fechaInicioVuelos, "fechaInicioVuelos no puede ser null");
@@ -104,6 +106,7 @@ public final class StandardExperimentPipeline {
         this.algoritmos = List.copyOf(algoritmos);
         this.iteracionesAlnsOverride = iteracionesAlnsOverride;
         this.maxRutasOverride = maxRutasOverride;
+        this.semillaALNS = semillaALNS;
     }
 
     /** Devuelve los dias de horizonte de busqueda usados en config adaptativa */
@@ -340,7 +343,11 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
 
         Config_Simulacion config = construirConfig(dataset.getPaquetes().size());
 
-        System.out.println("[2/4] Algoritmo: " + algoritmos.get(0).name);
+        System.out.println(String.format("[2/4] %s | semilla=%d | iteraciones=%d | maxRutas=%d | duracion=%d dias | vuelos=%d dias",
+                algoritmos.get(0).name, semillaALNS,
+                iteracionesAlnsOverride > 0 ? iteracionesAlnsOverride : 15,
+                maxRutasOverride > 0 ? maxRutasOverride : 5,
+                duracionEnvios, diasVuelos));
 
         DistribucionEnviosPorDia distribucionEnvios = new DistribucionEnviosPorDia(dataset.getPaquetes());
 
@@ -441,21 +448,37 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                 long duracionMs = (System.nanoTime() - t0) / 1_000_000;
 
                 Map<String, Double> metricas = solucion.getMetricas();
+                int totalPaqs = metricas.getOrDefault("totalPaquetes", 0.0).intValue();
+                int rutasPlanificadas = metricas.getOrDefault("rutasPlanificadasFase1", 0.0).intValue();
+                int sinRutaFase1 = metricas.getOrDefault("paquetesSinRutaFase1", 0.0).intValue();
+                int rutasAceptadas = metricas.getOrDefault("rutasAceptadasFase2", 0.0).intValue();
+                int rutasRechazadas = metricas.getOrDefault("rutasRechazadasFase2", 0.0).intValue();
+                int nuevosFase2 = metricas.getOrDefault("paquetesNuevosFase2", 0.0).intValue();
+
                 Log.detail("=== FASES DEL PIPELINE ===");
-                Log.detail("Fase 1 - Planificacion de Rutas (ALNS metaheuristico):");
-                Log.detail("  Tiempo:                   " + metricas.getOrDefault("msFase1Rutas", 0.0).longValue() + " ms");
-                Log.detail("  Descripcion:              Genera rutas candidatas para cada paquete usando busqueda adaptativa");
                 Log.detail("");
-                Log.detail("Fase 2 - Validacion y Asignacion (MinCostFlow determinista):");
-                Log.detail("  Tiempo:                   " + metricas.getOrDefault("msFase2Asignacion", 0.0).longValue() + " ms");
-                Log.detail("  Rutas planificadas:       " + metricas.getOrDefault("paquetesConRutaSeleccionada", 0.0).intValue());
-                Log.detail("  Rutas aceptadas:          " + metricas.getOrDefault("rutasAceptadasFase2", 0.0).intValue());
-                Log.detail("  Rutas rechazadas:         " + (metricas.getOrDefault("paquetesConRutaSeleccionada", 0.0).intValue() - metricas.getOrDefault("rutasAceptadasFase2", 0.0).intValue()));
-                Log.detail("  Descripcion:              Valida capacidad y ventanas temporales. Rechaza rutas inviables.");
+                Log.detail("FASE 1 - Planificacion de Rutas (ALNS metaheuristico)");
+                Log.detail("  Descripcion:  Genera ruta optima por paquete usando busqueda adaptativa con destroy/repair");
+                Log.detail("  Tiempo:       " + metricas.getOrDefault("msFase1Rutas", 0.0).longValue() + " ms");
+                Log.detail("  Resultados:   " + rutasPlanificadas + "/" + totalPaqs + " paquetes obtuvieron ruta");
+                if (sinRutaFase1 > 0) {
+                    Log.detail("                " + sinRutaFase1 + " paquetes sin ruta (sin conectividad o fuera de ventana)");
+                }
                 Log.detail("");
-                Log.detail("Fase 3 - Evaluacion Final (Calculo de costos):");
-                Log.detail("  Tiempo:                   " + metricas.getOrDefault("msFase3Evaluacion", 0.0).longValue() + " ms");
-                Log.detail("  Descripcion:              Calcula costo final: noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horas");
+                Log.detail("FASE 2 - Validacion y Asignacion (MinCostFlow determinista)");
+                Log.detail("  Descripcion:  Valida capacidad, ocupacion y ventanas temporales. Busca alternativas si la ruta no es factible. Asigna paquetes sin ruta de Fase 1.");
+                Log.detail("  Tiempo:       " + metricas.getOrDefault("msFase2Asignacion", 0.0).longValue() + " ms");
+                Log.detail("  Resultados:   " + rutasAceptadas + "/" + totalPaqs + " paquetes con ruta final");
+                if (rutasRechazadas > 0) {
+                    Log.detail("                " + rutasRechazadas + " rutas de Fase 1 rechazadas (sin alternativa factible)");
+                }
+                if (nuevosFase2 > 0) {
+                    Log.detail("                " + nuevosFase2 + " paquetes nuevos asignados (sin ruta en Fase 1)");
+                }
+                Log.detail("");
+                Log.detail("FASE 3 - Evaluacion Final");
+                Log.detail("  Descripcion:  Calculo de costo: noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horasAcumuladas");
+                Log.detail("  Tiempo:       " + metricas.getOrDefault("msFase3Evaluacion", 0.0).longValue() + " ms");
                 Log.detail("==========================");
 
                 List<ResultadoEnvio> resultados = construirResultadosEnvio(datasetDia, solucion, config);
@@ -696,8 +719,8 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             configAdaptativa.put("porcentajeRuptura", 0.10);
             configAdaptativa.put("modo", "muchos_paquetes_y_vuelos");
             Log.detail(String.format(Locale.ROOT,
-                    "  [ADAPTATIVO] paquetes=%d vuelos=%d → ALNS=100, maxRutas=100, ruptura=10%%",
-                    totalPaquetes, diasVuelos * 2866));
+                    "[CONFIG ADAPTATIVA] modo=muchos_paquetes_y_vuelos | paquetes=%d | iteraciones=100, maxRutas=100, ruptura=10%%, evaporacion=0.30",
+                    totalPaquetes));
         } else if (muchosPaquetes) {
             config.setMaxRutasPorPaquete(100);
             config.setIteracionesALNS(100);
@@ -708,10 +731,14 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
             configAdaptativa.put("porcentajeRuptura", 0.10);
             configAdaptativa.put("modo", "muchos_paquetes");
             Log.detail(String.format(Locale.ROOT,
-                    "  [ADAPTATIVO] paquetes=%d → ALNS=100, maxRutas=100, ruptura=10%%",
+                    "[CONFIG ADAPTATIVA] modo=muchos_paquetes | paquetes=%d | iteraciones=100, maxRutas=100, ruptura=10%%, evaporacion=0.40",
                     totalPaquetes));
         } else {
             configAdaptativa.put("modo", "default");
+            Log.detail(String.format(Locale.ROOT,
+                    "[CONFIG ADAPTATIVA] modo=default | paquetes=%d | iteraciones=%d, maxRutas=%d, ruptura=%.0f%%, evaporacion=%.2f",
+                    totalPaquetes, config.getIteracionesALNS(), config.getMaxRutasPorPaquete(),
+                    config.getPorcentajeRuptura() * 100, config.getEvaporacionFeromona()));
         }
 
         if (iteracionesAlnsOverride > 0) {
@@ -931,22 +958,30 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
 
         if (solucion != null) {
             Map<String, Double> metricas = solucion.getMetricas();
-            int rutasPlanificadas = metricas.getOrDefault("paquetesConRutaSeleccionada", 0.0).intValue();
+            int totalPaqs = metricas.getOrDefault("totalPaquetes", 0.0).intValue();
+            int rutasPlanificadas = metricas.getOrDefault("rutasPlanificadasFase1", 0.0).intValue();
+            int sinRutaFase1 = metricas.getOrDefault("paquetesSinRutaFase1", 0.0).intValue();
             int rutasAceptadas = metricas.getOrDefault("rutasAceptadasFase2", 0.0).intValue();
+            int rutasRechazadas = metricas.getOrDefault("rutasRechazadasFase2", 0.0).intValue();
+            int nuevosFase2 = metricas.getOrDefault("paquetesNuevosFase2", 0.0).intValue();
             json.append("  \"fases\": {\n");
             json.append("    \"fase1_planificacion\": {\n");
-            json.append("      \"descripcion\": \"Planificacion de rutas con metaheuristico ALNS\",\n");
-            json.append("      \"tiempoMs\": ").append(metricas.getOrDefault("msFase1Rutas", 0.0).longValue()).append("\n");
+            json.append("      \"descripcion\": \"ALNS metaheuristico: genera ruta optima por paquete usando busqueda adaptativa con destroy/repair\",\n");
+            json.append("      \"tiempoMs\": ").append(metricas.getOrDefault("msFase1Rutas", 0.0).longValue()).append(",\n");
+            json.append("      \"totalPaquetes\": ").append(totalPaqs).append(",\n");
+            json.append("      \"paquetesConRuta\": ").append(rutasPlanificadas).append(",\n");
+            json.append("      \"paquetesSinRuta\": ").append(sinRutaFase1).append("\n");
             json.append("    },\n");
             json.append("    \"fase2_validacion\": {\n");
-            json.append("      \"descripcion\": \"Validacion determinista de capacidad y ventanas temporales\",\n");
+            json.append("      \"descripcion\": \"MinCostFlow determinista: valida capacidad, ocupacion y ventanas temporales. Busca alternativas si la ruta no es factible. Asigna paquetes sin ruta de Fase 1.\",\n");
             json.append("      \"tiempoMs\": ").append(metricas.getOrDefault("msFase2Asignacion", 0.0).longValue()).append(",\n");
-            json.append("      \"rutasPlanificadas\": ").append(rutasPlanificadas).append(",\n");
+            json.append("      \"rutasRecibidas\": ").append(rutasPlanificadas).append(",\n");
             json.append("      \"rutasAceptadas\": ").append(rutasAceptadas).append(",\n");
-            json.append("      \"rutasRechazadas\": ").append(rutasPlanificadas - rutasAceptadas).append("\n");
+            json.append("      \"rutasRechazadas\": ").append(rutasRechazadas).append(",\n");
+            json.append("      \"paquetesNuevosAsignados\": ").append(nuevosFase2).append("\n");
             json.append("    },\n");
             json.append("    \"fase3_evaluacion\": {\n");
-            json.append("      \"descripcion\": \"Calculo de costo final (noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horas)\",\n");
+            json.append("      \"descripcion\": \"Calculo de costo final: noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horasAcumuladas\",\n");
             json.append("      \"tiempoMs\": ").append(metricas.getOrDefault("msFase3Evaluacion", 0.0).longValue()).append("\n");
             json.append("    }\n");
             json.append("  },\n");

@@ -213,7 +213,89 @@ Ver [README.md](README.md) y [data/README.md](data/README.md) para detalles comp
 - Arquitectura de dos fases funcional.
 - Pipeline integrado en `Main`.
 - Evaluación global compartida en ALNS.
-- Log JSON generado en `data/output/`.
+- Log JSON generado en `data/output/` con sección `fases` detallada.
+- Log TXT de diagnóstico detallado en `data/output/log_detalle_*.txt`.
+
+---
+
+## Formato de logs
+
+### Log JSON (`data/output/log_YYYYMMDD_HHMMSS.json`)
+
+```json
+{
+  "metadata": {
+    "algoritmo": "ALNS",
+    "tipoSeleccionFecha": "rango|fecha_fija|dia_maximo|rango_indice|dia_indice",
+    "fechaSeleccionada": "2026-01-01 a 2026-01-07",
+    "maletasTotales": 103,
+    "maletasAsignadas": 103,
+    "pedidosTotales": 52,
+    "pedidosAsignados": 52,
+    "rangoDiasVuelos": "2025-12-30 a 2026-01-04",
+    "hayColapso": false,
+    "maletasFueraDePlazo": 0,
+    "pedidosSinAsignar": 0,
+    "costoTotal": 603.33,
+    "duracionMs": 828,
+    "generado": "2026-06-17T13:11:34"
+  },
+  "fases": {
+    "fase1_planificacion": {
+      "descripcion": "ALNS metaheuristico: genera ruta optima por paquete usando busqueda adaptativa con destroy/repair",
+      "tiempoMs": 815,
+      "totalPaquetes": 52,
+      "paquetesConRuta": 52,
+      "paquetesSinRuta": 0
+    },
+    "fase2_validacion": {
+      "descripcion": "MinCostFlow determinista: valida capacidad, ocupacion y ventanas temporales. Busca alternativas si la ruta no es factible.",
+      "tiempoMs": 4,
+      "rutasRecibidas": 52,
+      "rutasAceptadas": 52,
+      "rutasRechazadas": 0
+    },
+    "fase3_evaluacion": {
+      "descripcion": "Calculo de costo final: noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horasAcumuladas",
+      "tiempoMs": 2
+    }
+  },
+  "configuracion": {
+    "modo": "default",
+    "iteracionesALNS": 20,
+    "maxRutasPorPaquete": 4,
+    "maxEscalas": 2,
+    "horizonteBusquedaHoras": 72,
+    "evaporacionFeromona": 0.40,
+    "porcentajeRuptura": 0.15
+  },
+  "diagnosticoFueraDePlazo": [...],
+  "asignaciones": [...]
+}
+```
+
+### Log TXT (`data/output/log_detalle_YYYYMMDD_HHMMSS.txt`)
+
+```
+[CONFIG ADAPTATIVA] modo=default | paquetes=52 | iteraciones=20, maxRutas=4, ruptura=15%, evaporacion=0.40
+[BUSQUEDA RUTAS] 52 tareas de busqueda paralela completadas [653ms]
+=== FASES DEL PIPELINE ===
+
+FASE 1 - Planificacion de Rutas (ALNS metaheuristico)
+  Descripcion:  Genera ruta optima por paquete usando busqueda adaptativa con destroy/repair
+  Tiempo:       815 ms
+  Resultados:   52/52 paquetes obtuvieron ruta
+
+FASE 2 - Validacion y Asignacion (MinCostFlow determinista)
+  Descripcion:  Valida capacidad, ocupacion y ventanas temporales. Busca alternativas si la ruta no es factible.
+  Tiempo:       4 ms
+  Resultados:   52/52 rutas aceptadas
+
+FASE 3 - Evaluacion Final
+  Descripcion:  Calculo de costo: noAsignados*10000 + fueraPlazo*2500 + colapso*5000 + horasAcumuladas
+  Tiempo:       2 ms
+==========================
+```
 
 ---
 

@@ -210,11 +210,25 @@ El pipeline soporta múltiples modos:
 
 Cada log generado en `data/output/log_YYYYMMDD_HHMMSS.json` contiene:
 
-- **metadata**: algoritmo, tipo de selección de fecha, fecha seleccionada, métricas de la corrida
+- **metadata**: algoritmo, tipo de selección de fecha, fecha seleccionada, métricas de la corrida (maletas, pedidos, costo, duración)
+- **fases**: desglose detallado de las 3 fases del pipeline:
+  - `fase1_planificacion`: tiempo, total paquetes, paquetes con ruta, paquetes sin ruta
+  - `fase2_validacion`: tiempo, rutas recibidas, rutas aceptadas, rutas rechazadas
+  - `fase3_evaluacion`: tiempo de cálculo de costo final
 - **escaneo**: días escaneados, tiempo de escaneo, total de envíos (solo en modo `dia_maximo`)
-- **configuracion**: modo adaptativo, iteraciones, hormigas, evaporación, etc.
+- **configuracion**: modo adaptativo, iteraciones, max rutas, evaporación, porcentaje de ruptura
 - **diagnosticoFueraDePlazo**: detalle de paquetes fuera de plazo con ruta completa (solo si hay)
 - **asignaciones**: lista de paquetes asignados con vuelos y tiempos
+
+### Contenido del log TXT (diagnóstico detallado)
+
+El archivo `data/output/log_detalle_YYYYMMDD_HHMMSS.txt` contiene:
+
+- **[CONFIG ADAPTATIVA]**: modo de configuración y parámetros usados
+- **[BUSQUEDA RUTAS]**: tareas de búsqueda paralela completadas
+- **[DIAG-ALNS]**: diagnóstico de paquetes sin ruta durante ALNS
+- **=== FASES DEL PIPELINE ===**: desglose de cada fase con tiempos y resultados
+- **[DIAG]**: diagnóstico de paquetes no asignados o fuera de plazo
 
 ---
 

@@ -414,8 +414,8 @@ public final class PlanificacionUtils {
                     if (completados == total) {
                         long ms = (System.nanoTime() - t0) / 1_000_000;
                         Log.detail(String.format(Locale.ROOT,
-                                "  [RUTAS] %d/%d segmentos temporales [%dms]",
-                                completados, total, ms));
+                                "[BUSQUEDA RUTAS] %d tareas de busqueda paralela completadas [%dms]",
+                                completados, ms));
                     }
                 });
             }

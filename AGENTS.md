@@ -54,6 +54,9 @@ cost = (noAsignados × 10000) + (fueraDePlazo × 2500) + (colapso × 5000) + hor
 - `--algoritmo=ALNS` → runs ALNS. **One algorithm per invocation.**
 - `--dias-vuelos=3` → loads 3 days of flights. `0` loads **all** flights (~3.1M, ~1095 days).
 - `--semilla-alns=17` — default seed.
+- `--iteraciones-alns=15` — default ALNS iterations (faster execution).
+- `--max-rutas=5` — default max routes per package (faster execution).
+- `--duracion-envios=5` — default shipment duration in days.
 - `--fecha-envios` unset → uses `max` (day with highest shipment count).
 - `--rango-envios=2026-01-01:2026-01-07` → explicit date range (processes all packages in range).
 - `--rango-envios=3-7` → index-based range (days relative to `fechaInicioVuelos`).
