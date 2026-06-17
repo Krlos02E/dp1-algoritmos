@@ -5,10 +5,10 @@ import tasf.core.Dataset;
 import tasf.core.EstadoOperacional;
 import tasf.core.PlanificacionUtils;
 import tasf.core.RouteFinder;
-import tasf.model.Aeropuerto;
 import tasf.model.Paquete;
 import tasf.model.Ruta;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -151,7 +151,9 @@ public class MinCostFlowAssigner {
     }
 
     /**
-     * Construye conjunto de rutas candidatas para priorizar asignación.
+     * Construye conjunto de rutas candidatas con enfoque híbrido:
+     * - Usa cache global de Fase 1 cuando tiene rutas suficientes
+     * - Hace búsqueda individual para paquetes fuera de la ventana cacheada
      */
     private Map<String, List<Ruta>> construirCandidatosRutas(
             Dataset datos,
@@ -159,27 +161,59 @@ public class MinCostFlowAssigner {
     ) {
         Map<String, List<Ruta>> candidatos = new HashMap<>();
         RouteFinder finder = new RouteFinder(datos);
+        
+        int minRutasCache = 3;
+        int maxRutasFallback = 50;
+        
         for (Paquete p : datos.getPaquetes()) {
-            Aeropuerto origen = datos.getAeropuerto(p.getOrigenOACI());
-            if (origen == null) origen = datos.getAeropuerto(config.getAeropuertoHub());
-            if (origen == null) continue;
+            LocalDateTime creacionUtc = PlanificacionUtils.getCreacionUtc(p, datos, config);
+            String key = p.getOrigenOACI() + "|" + p.getDestinoOACI();
             
-            LocalDateTime creacion = PlanificacionUtils.getCreacionUtc(p, datos, config);
-            List<Ruta> rutas = finder.buscarRutas(
-                    p.getOrigenOACI(), p.getDestinoOACI(), creacion,
-                    200, config.getMaxEscalas(), config.getMinimaConexion(), config.getHorizonteBusqueda()
-            );
-            // Filtrar por ventana de tiempo del paquete
-            LocalDateTime limite = creacion.plus(PlanificacionUtils.getPlazoObjetivo(p, datos, config));
-            List<Ruta> filtradas = new ArrayList<>();
-            for (Ruta r : rutas) {
-                if (r.getSalidaUtc().isBefore(creacion)) continue;
-                if (r.getLlegadaUtc().isAfter(limite)) break;
-                filtradas.add(r);
-                if (filtradas.size() >= 50) break; // Top 50 para priorización
+            List<Ruta> cacheadas = PlanificacionUtils.obtenerRutasCache(key);
+            List<Ruta> filtradas = filtrarRutasPorPaquete(cacheadas, creacionUtc, p, datos, config);
+            
+            if (filtradas.size() >= minRutasCache) {
+                candidatos.put(p.getId(), filtradas);
+            } else {
+                List<Ruta> rutasIndividuales = finder.buscarRutas(
+                        p.getOrigenOACI(), p.getDestinoOACI(), creacionUtc,
+                        maxRutasFallback, config.getMaxEscalas(), 
+                        config.getMinimaConexion(), config.getHorizonteBusqueda()
+                );
+                List<Ruta> filtradasIndividuales = filtrarRutasPorPaquete(
+                        rutasIndividuales, creacionUtc, p, datos, config
+                );
+                candidatos.put(p.getId(), filtradasIndividuales);
             }
-            candidatos.put(p.getId(), filtradas);
         }
+        
         return candidatos;
+    }
+    
+    private List<Ruta> filtrarRutasPorPaquete(
+            List<Ruta> rutas,
+            LocalDateTime creacionUtc,
+            Paquete paquete,
+            Dataset datos,
+            Config_Simulacion config
+    ) {
+        if (rutas == null || rutas.isEmpty()) {
+            return List.of();
+        }
+        
+        LocalDateTime finVentana = creacionUtc.plus(config.getHorizonteBusqueda());
+        Duration plazo = PlanificacionUtils.getPlazoObjetivo(paquete, datos, config);
+        LocalDateTime limiteEntrega = creacionUtc.plus(plazo);
+        
+        List<Ruta> filtradas = new ArrayList<>();
+        for (Ruta ruta : rutas) {
+            if (ruta.getSalidaUtc().isBefore(creacionUtc)) continue;
+            if (ruta.getSalidaUtc().isAfter(finVentana)) break;
+            if (ruta.getLlegadaUtc().isAfter(limiteEntrega)) continue;
+            filtradas.add(ruta);
+            if (filtradas.size() >= config.getMaxRutasPorPaquete()) break;
+        }
+        
+        return filtradas;
     }
 }

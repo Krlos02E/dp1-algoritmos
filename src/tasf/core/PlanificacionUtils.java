@@ -33,6 +33,10 @@ public final class PlanificacionUtils {
         CACHE_GLOBAL_RUTAS = new ConcurrentHashMap<>();
     }
 
+    public static List<Ruta> obtenerRutasCache(String parOD) {
+        return CACHE_GLOBAL_RUTAS.getOrDefault(parOD, List.of());
+    }
+
     public static LocalDateTime getCreacionUtc(Paquete paquete, Dataset datos, Config_Simulacion config) {
         Aeropuerto origen = datos.getAeropuerto(paquete.getOrigenOACI());
         if (origen == null) {
