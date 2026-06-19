@@ -143,7 +143,17 @@ public class EstadoOperacional {
             instanteActual = vuelo.getLlegadaUtc();
         }
 
-        return aeropuertoActual.getCodigoOACI().equals(paquete.getDestinoOACI());
+        if (!aeropuertoActual.getCodigoOACI().equals(paquete.getDestinoOACI())) {
+            return false;
+        }
+
+        Vuelo ultimoVuelo = vuelos.get(vuelos.size() - 1);
+        LocalDateTime finRecogida = ultimoVuelo.getLlegadaUtc().plus(config.getTiempoRecogidaDestino());
+        if (!puedeReservarIntervalo(aeropuertoActual, ultimoVuelo.getLlegadaUtc(), finRecogida, cantidad)) {
+            return false;
+        }
+
+        return true;
     }
 
     public boolean reservarRutaSiFactible(
@@ -222,6 +232,10 @@ public class EstadoOperacional {
             instanteActual = vuelo.getLlegadaUtc();
         }
 
+        Vuelo ultimoVuelo = vuelos.get(vuelos.size() - 1);
+        LocalDateTime finRecogida = ultimoVuelo.getLlegadaUtc().plus(config.getTiempoRecogidaDestino());
+        reservarIntervalo(aeropuertoActual, ultimoVuelo.getLlegadaUtc(), finRecogida, cantidad);
+
         return true;
     }
 
@@ -264,6 +278,12 @@ public class EstadoOperacional {
         }
 
         if (!aeropuertoActual.getCodigoOACI().equals(paquete.getDestinoOACI())) return 0;
+
+        Vuelo ultimoVuelo = vuelos.get(vuelos.size() - 1);
+        LocalDateTime finRecogida = ultimoVuelo.getLlegadaUtc().plus(config.getTiempoRecogidaDestino());
+        int capDestino = capacidadResidualIntervalo(aeropuertoActual, ultimoVuelo.getLlegadaUtc(), finRecogida);
+        minCap = Math.min(minCap, capDestino);
+
         return minCap == Integer.MAX_VALUE ? 0 : minCap;
     }
 

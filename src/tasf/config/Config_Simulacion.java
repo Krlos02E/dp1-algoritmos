@@ -6,7 +6,8 @@ public class Config_Simulacion {
     private String aeropuertoHub = "SKBO";
     private Duration plazoMismoContinente = Duration.ofHours(24);
     private Duration plazoIntercontinental = Duration.ofHours(48);
-    private Duration minimaConexion = Duration.ofMinutes(45);
+    private Duration minimaConexion = Duration.ofMinutes(10);
+    private Duration tiempoRecogidaDestino = Duration.ofMinutes(15);
     private Duration horizonteBusqueda = Duration.ofHours(72);
     private int iteracionesALNS = 120;
     private int maxEscalas = 3;
@@ -47,6 +48,14 @@ public class Config_Simulacion {
 
     public void setMinimaConexion(Duration minimaConexion) {
         this.minimaConexion = minimaConexion;
+    }
+
+    public Duration getTiempoRecogidaDestino() {
+        return tiempoRecogidaDestino;
+    }
+
+    public void setTiempoRecogidaDestino(Duration tiempoRecogidaDestino) {
+        this.tiempoRecogidaDestino = tiempoRecogidaDestino;
     }
 
     public Duration getHorizonteBusqueda() {
