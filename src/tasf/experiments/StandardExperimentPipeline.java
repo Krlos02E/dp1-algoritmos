@@ -51,6 +51,9 @@ import java.util.function.Supplier;
  */
 public final class StandardExperimentPipeline {
     private static final DateTimeFormatter FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+    private static final int ROLLING_LOOKAHEAD_MINUTES = 2405;
+    private static final int FLIGHT_WINDOW_LOOKBACK_HOURS = 24;
+    private static final int FLIGHT_WINDOW_FORWARD_BUFFER_HOURS = 48;
 
     private final Path dataDir;
     private final LocalDate fechaInicioVuelos;
@@ -439,7 +442,7 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
                     ? diaUnico
                     : distribucionEnvios.encontrarDiaMasCercano(nivelEnvios);
             List<Paquete> paquetesTrabajo = dia.envios;
-            Dataset datasetDia = construirDatasetDia(dataset, paquetesTrabajo);
+            Dataset datasetDia = construirDatasetDia(dataset, paquetesTrabajo, dia.fecha.atStartOfDay());
             int totalMaletasDia = paquetesTrabajo.stream().mapToInt(Paquete::getCantidad).sum();
 
             for (AlgorithmSpec algoritmo : algoritmos) {
@@ -674,8 +677,42 @@ long msLoad = (System.nanoTime() - tPipeline) / 1_000_000;
         return resultados;
     }
 
-    private Dataset construirDatasetDia(Dataset base, List<Paquete> paquetesDia) {
-        return new Dataset(base.getAeropuertos(), base.getVuelos(), new ArrayList<>(paquetesDia));
+    private Dataset construirDatasetDia(Dataset base, List<Paquete> paquetesDia, LocalDateTime simTime) {
+        LocalDateTime inicioVuelos = simTime.minusHours(FLIGHT_WINDOW_LOOKBACK_HOURS);
+        LocalDateTime finVuelos = simTime
+                .plusMinutes(ROLLING_LOOKAHEAD_MINUTES)
+                .plusHours(FLIGHT_WINDOW_FORWARD_BUFFER_HOURS);
+
+        List<tasf.model.Vuelo> vuelosFiltrados = base.getVuelos().stream()
+                .filter(vuelo -> !vuelo.getSalidaUtc().isBefore(inicioVuelos)
+                        && !vuelo.getSalidaUtc().isAfter(finVuelos))
+                .toList();
+
+        Map<String, Aeropuerto> aeropuertosFiltrados = new HashMap<>();
+        for (Paquete paquete : paquetesDia) {
+            Aeropuerto origen = base.getAeropuerto(paquete.getOrigenOACI());
+            Aeropuerto destino = base.getAeropuerto(paquete.getDestinoOACI());
+            if (origen != null) {
+                aeropuertosFiltrados.put(origen.getCodigoOACI(), origen);
+            }
+            if (destino != null) {
+                aeropuertosFiltrados.put(destino.getCodigoOACI(), destino);
+            }
+        }
+        for (tasf.model.Vuelo vuelo : vuelosFiltrados) {
+            aeropuertosFiltrados.put(vuelo.getOrigen().getCodigoOACI(), vuelo.getOrigen());
+            aeropuertosFiltrados.put(vuelo.getDestino().getCodigoOACI(), vuelo.getDestino());
+        }
+
+        System.out.println(String.format(Locale.ROOT,
+                "[VENTANA CLI] simTime=%s | paquetes=%d | vuelosPlanificacion=%d | ventanaVuelos=[%s, %s]",
+                simTime,
+                paquetesDia.size(),
+                vuelosFiltrados.size(),
+                inicioVuelos,
+                finVuelos));
+
+        return new Dataset(aeropuertosFiltrados, vuelosFiltrados, new ArrayList<>(paquetesDia));
     }
 
     private Config_Simulacion construirConfig(int totalPaquetes) {

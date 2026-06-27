@@ -255,14 +255,13 @@ public final class DatasetTextoLoader {
             }
 
             try (Stream<String> lineas = Files.lines(archivo, StandardCharsets.UTF_8)) {
-                Stream<String> flujo = lineas.map(String::trim)
-                        .filter(s -> !s.isEmpty());
-
-                if (maxEnviosPorArchivo > 0) {
-                    flujo = flujo.limit(maxEnviosPorArchivo);
-                }
-
-                flujo.forEach(raw -> {
+                final int[] aceptados = {0};
+                lineas.map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .forEach(raw -> {
+                            if (maxEnviosPorArchivo > 0 && aceptados[0] >= maxEnviosPorArchivo) {
+                                return;
+                            }
                             try {
                                 Paquete parsed = Paquete.parse(raw, origen);
                                 if (!aeropuertos.containsKey(parsed.getDestinoOACI())) {
@@ -282,12 +281,13 @@ public final class DatasetTextoLoader {
                                 paquetes.add(new Paquete(
                                         idUnico,
                                         parsed.getOrigenOACI(),
-                                        utc.toLocalDate(),  // Fecha UTC
-                                        utc.toLocalTime(),   // Hora UTC
+                                        utc.toLocalDate(),
+                                        utc.toLocalTime(),
                                         parsed.getDestinoOACI(),
                                         parsed.getCantidad(),
                                         parsed.getReferencia()
                                 ));
+                                aceptados[0]++;
                             } catch (RuntimeException ignored) {
                             }
                         });
