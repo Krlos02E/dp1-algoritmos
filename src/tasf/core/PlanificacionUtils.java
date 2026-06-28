@@ -349,6 +349,7 @@ public final class PlanificacionUtils {
             RouteFinder finder
     ) {
         Map<String, List<Ruta>> candidatos = new HashMap<>();
+        long tInicio = System.nanoTime();
 
         // Paso 1: Calcular min/max creacionUtc por par OD
         Map<String, LocalDateTime> minCreacionPorPar = new HashMap<>();
@@ -390,7 +391,10 @@ public final class PlanificacionUtils {
             final int total = tareasBusqueda.size();
             final long t0 = System.nanoTime();
 
-            int rutasPorPar = Math.max(config.getMaxRutasPorPaquete() * 5, 200);
+            int rutasPorPar = Math.max(config.getMaxRutasPorPaquete() * 5, 30);
+            Log.info(String.format(Locale.ROOT,
+                    "[BUSQUEDA RUTAS] paquetes=%d paresOD=%d tareas=%d hilos=%d rutasPorPar=%d",
+                    datos.getPaquetes().size(), minCreacionPorPar.size(), tareasBusqueda.size(), hilos, rutasPorPar));
 
             List<String> tareasLista = new ArrayList<>(tareasBusqueda);
             for (int i = 0; i < tareasLista.size(); i++) {
@@ -413,7 +417,7 @@ public final class PlanificacionUtils {
                     int completados = (idx + 1);
                     if (completados == total) {
                         long ms = (System.nanoTime() - t0) / 1_000_000;
-                        Log.detail(String.format(Locale.ROOT,
+                        Log.info(String.format(Locale.ROOT,
                                 "[BUSQUEDA RUTAS] %d tareas de busqueda paralela completadas [%dms]",
                                 completados, ms));
                     }
@@ -455,6 +459,11 @@ public final class PlanificacionUtils {
             }
             candidatos.put(paquete.getId(), filtradas);
         }
+
+        long msTotal = (System.nanoTime() - tInicio) / 1_000_000;
+        Log.info(String.format(Locale.ROOT,
+                "[BUSQUEDA RUTAS] candidatos construidos para %d paquetes [%dms]",
+                datos.getPaquetes().size(), msTotal));
 
         return candidatos;
     }
