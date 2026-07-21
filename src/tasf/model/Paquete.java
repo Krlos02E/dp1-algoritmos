@@ -12,8 +12,20 @@ public class Paquete {
     private final String destinoOACI;
     private final int cantidad;
     private final String referencia;
+    private final String clienteId;
+    private final boolean incremental;
 
-    public Paquete(String id, String origenOACI, LocalDate fecha, LocalTime hora, String destinoOACI, int cantidad, String referencia) {
+    public Paquete(
+            String id,
+            String origenOACI,
+            LocalDate fecha,
+            LocalTime hora,
+            String destinoOACI,
+            int cantidad,
+            String referencia,
+            String clienteId,
+            boolean incremental
+    ) {
         this.id = id;
         this.origenOACI = origenOACI;
         this.fecha = fecha;
@@ -21,6 +33,8 @@ public class Paquete {
         this.destinoOACI = destinoOACI;
         this.cantidad = cantidad;
         this.referencia = referencia;
+        this.clienteId = clienteId;
+        this.incremental = incremental;
     }
 
     public String getId() {
@@ -51,6 +65,14 @@ public class Paquete {
         return referencia;
     }
 
+    public String getClienteId() {
+        return clienteId;
+    }
+
+    public boolean isIncremental() {
+        return incremental;
+    }
+
     public LocalDateTime getInstanteCreacionUtc(Aeropuerto aeropuertoOrigen) {
         // fecha y hora ya están en UTC tras la carga en DatasetTextoLoader
         return LocalDateTime.of(fecha, hora);
@@ -77,6 +99,7 @@ public class Paquete {
         String destino;
         int cantidad;
         String referencia = "";
+        String clienteId = "";
 
         if (parts[2].contains(":")) {
             hora = LocalTime.parse(parts[2]);
@@ -84,6 +107,7 @@ public class Paquete {
             cantidad = Integer.parseInt(parts[4]);
             if (parts.length > 5) {
                 referencia = parts[5];
+                clienteId = parts[5];
             }
         } else {
             if (parts.length < 6) {
@@ -96,9 +120,10 @@ public class Paquete {
             cantidad = Integer.parseInt(parts[5]);
             if (parts.length > 6) {
                 referencia = parts[6];
+                clienteId = parts[6];
             }
         }
 
-        return new Paquete(id, origenOACI, fecha, hora, destino, cantidad, referencia);
+        return new Paquete(id, origenOACI, fecha, hora, destino, cantidad, referencia, clienteId, false);
     }
 }

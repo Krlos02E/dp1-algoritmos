@@ -285,7 +285,9 @@ public final class DatasetTextoLoader {
                                         utc.toLocalTime(),
                                         parsed.getDestinoOACI(),
                                         parsed.getCantidad(),
-                                        parsed.getReferencia()
+                                        parsed.getReferencia(),
+                                        parsed.getClienteId(),
+                                        false
                                 ));
                                 aceptados[0]++;
                             } catch (RuntimeException ignored) {
