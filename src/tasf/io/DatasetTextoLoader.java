@@ -27,9 +27,13 @@ import java.util.stream.Stream;
 
 public final class DatasetTextoLoader {
     private static final Pattern PATRON_FILA_AEROPUERTO =
-            Pattern.compile("^\\s*\\d+\\s+([A-Z]{4})\\s+.*?\\s+([+-]\\d+)\\s+(\\d+)\\s+Latitude.*$");
+            Pattern.compile("^\\s*\\d+\\s+([A-Z]{4})\\s+.*?\\s+([+-]\\d{1,4})\\s+(\\d+)\\s+Latitude.*$");
     private static final Pattern PATRON_ARCHIVO_ENVIOS =
             Pattern.compile("_envios_([A-Z]{4})_\\.txt");
+    private static final Map<String, Integer> OFFSETS_MINUTOS_CORREGIDOS = Map.of(
+            "VIDP", 330,
+            "OAKB", 270
+    );
 
     private DatasetTextoLoader() {
     }
@@ -211,9 +215,9 @@ public final class DatasetTextoLoader {
             }
 
             String codigo = m.group(1);
-            int gmtHoras = Integer.parseInt(m.group(2));
+            String rawOffset = m.group(2);
             int capacidad = Integer.parseInt(m.group(3));
-            int gmtMinutos = gmtHoras * 60;
+            int gmtMinutos = resolverOffsetMinutos(codigo, rawOffset);
 
             aeropuertos.put(codigo, new Aeropuerto(codigo, continenteActual, gmtMinutos, capacidad));
         }
@@ -223,6 +227,33 @@ public final class DatasetTextoLoader {
         }
 
         return aeropuertos;
+    }
+
+    private static int resolverOffsetMinutos(String codigo, String rawOffset) {
+        if (rawOffset == null || rawOffset.isBlank()) {
+            return 0;
+        }
+
+        String normalized = rawOffset.trim();
+        boolean negativo = normalized.startsWith("-");
+        String digits = normalized.replaceFirst("^[+-]", "");
+        int sign = negativo ? -1 : 1;
+
+        if (digits.length() <= 2) {
+            Integer offsetCorregido = OFFSETS_MINUTOS_CORREGIDOS.get(codigo);
+            if (offsetCorregido != null) {
+                return offsetCorregido;
+            }
+            return sign * Integer.parseInt(digits) * 60;
+        }
+
+        int valor = Integer.parseInt(digits);
+        int horas = valor / 100;
+        int minutos = valor % 100;
+        if (minutos >= 60) {
+            throw new IllegalArgumentException("Offset GMT inválido para " + codigo + ": " + rawOffset);
+        }
+        return sign * (horas * 60 + minutos);
     }
 
     private static List<Paquete> cargarPaquetes(
