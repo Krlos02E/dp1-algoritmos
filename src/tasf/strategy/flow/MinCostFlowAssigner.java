@@ -11,9 +11,12 @@ import tasf.model.Ruta;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Asigna paquetes a las rutas seleccionadas por la fase 1.
@@ -161,35 +164,70 @@ public class MinCostFlowAssigner {
     ) {
         Map<String, List<Ruta>> candidatos = new HashMap<>();
         RouteFinder finder = new RouteFinder(datos);
-        
-        int minRutasCache = 3;
         int maxRutasFallback = 50;
-        
+
         for (Paquete p : datos.getPaquetes()) {
             LocalDateTime creacionUtc = PlanificacionUtils.getCreacionUtc(p, datos, config);
             String key = p.getOrigenOACI() + "|" + p.getDestinoOACI();
-            
+
             List<Ruta> cacheadas = PlanificacionUtils.obtenerRutasCache(key, creacionUtc);
             List<Ruta> filtradas = filtrarRutasPorPaquete(cacheadas, creacionUtc, p, datos, config);
-            
-            if (filtradas.size() >= minRutasCache) {
-                candidatos.put(p.getId(), filtradas);
-            } else {
-                List<Ruta> rutasIndividuales = finder.buscarRutas(
-                        p.getOrigenOACI(), p.getDestinoOACI(), creacionUtc,
-                        maxRutasFallback, config.getMaxEscalas(), 
-                        config.getMinimaConexion(), config.getHorizonteBusqueda()
-                );
-                List<Ruta> filtradasIndividuales = filtrarRutasPorPaquete(
-                        rutasIndividuales, creacionUtc, p, datos, config
-                );
-                candidatos.put(p.getId(), filtradasIndividuales);
-            }
+
+            List<Ruta> rutasIndividuales = finder.buscarRutas(
+                    p.getOrigenOACI(), p.getDestinoOACI(), creacionUtc,
+                    maxRutasFallback, config.getMaxEscalas(),
+                    config.getMinimaConexion(), config.getHorizonteBusqueda()
+            );
+            List<Ruta> filtradasIndividuales = filtrarRutasPorPaquete(
+                    rutasIndividuales, creacionUtc, p, datos, config
+            );
+
+            candidatos.put(p.getId(), combinarRutasCandidatas(filtradas, filtradasIndividuales, creacionUtc, config));
         }
-        
+
         return candidatos;
     }
-    
+
+    private List<Ruta> combinarRutasCandidatas(
+            List<Ruta> cacheadas,
+            List<Ruta> individuales,
+            LocalDateTime creacionUtc,
+            Config_Simulacion config
+    ) {
+        List<Ruta> combinadas = new ArrayList<>();
+        Set<String> firmas = new HashSet<>();
+
+        agregarRutasUnicas(combinadas, firmas, cacheadas);
+        agregarRutasUnicas(combinadas, firmas, individuales);
+
+        combinadas.sort(Comparator.comparing(Ruta::getLlegadaUtc)
+                .thenComparingInt(Ruta::getCantidadSaltos)
+                .thenComparingDouble(ruta -> ruta.getHorasTotalesDesde(creacionUtc)));
+
+        if (combinadas.size() > config.getMaxRutasPorPaquete()) {
+            return new ArrayList<>(combinadas.subList(0, config.getMaxRutasPorPaquete()));
+        }
+        return combinadas;
+    }
+
+    private void agregarRutasUnicas(List<Ruta> destino, Set<String> firmas, List<Ruta> origen) {
+        if (origen == null || origen.isEmpty()) {
+            return;
+        }
+        for (Ruta ruta : origen) {
+            String firma = construirFirmaRuta(ruta);
+            if (firmas.add(firma)) {
+                destino.add(ruta);
+            }
+        }
+    }
+
+    private String construirFirmaRuta(Ruta ruta) {
+        StringBuilder sb = new StringBuilder();
+        ruta.getVuelos().forEach(vuelo -> sb.append(vuelo.getId()).append('|'));
+        return sb.toString();
+    }
+
     private List<Ruta> filtrarRutasPorPaquete(
             List<Ruta> rutas,
             LocalDateTime creacionUtc,
