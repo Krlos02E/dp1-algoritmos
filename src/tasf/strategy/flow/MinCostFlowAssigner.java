@@ -242,7 +242,6 @@ public class MinCostFlowAssigner {
         LocalDateTime finVentana = creacionUtc.plus(config.getHorizonteBusqueda());
         Duration plazo = PlanificacionUtils.getPlazoObjetivo(paquete, datos, config);
         LocalDateTime limiteEntrega = creacionUtc.plus(plazo);
-        
         List<Ruta> filtradas = new ArrayList<>();
         for (Ruta ruta : rutas) {
             if (ruta.getSalidaUtc().isBefore(creacionUtc)) continue;

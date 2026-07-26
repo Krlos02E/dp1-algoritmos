@@ -82,22 +82,28 @@ public class RouteFinder {
         
         for (Ruta r : rutas) {
             if (filtradas.size() >= maxRutas) break;
-            
-            List<Vuelo> vuelos = r.getVuelos();
-            StringBuilder firma = new StringBuilder();
-            for (Vuelo v : vuelos) {
-                firma.append(v.getOrigen().getCodigoOACI()).append("-");
+
+            String key = construirFirmaRuta(r);
+            if (firmasUsadas.contains(key)) {
+                continue;
             }
-            firma.append(r.getLlegadaUtc());
-            
-            String key = firma.toString();
-            if (!firmasUsadas.contains(key) || filtradas.size() < maxRutas / 3) {
-                filtradas.add(r);
-                firmasUsadas.add(key);
-            }
+
+            filtradas.add(r);
+            firmasUsadas.add(key);
         }
         
         return filtradas;
+    }
+
+    private String construirFirmaRuta(Ruta ruta) {
+        StringBuilder firma = new StringBuilder();
+        for (Vuelo vuelo : ruta.getVuelos()) {
+            if (firma.length() > 0) {
+                firma.append("->");
+            }
+            firma.append(vuelo.getId());
+        }
+        return firma.toString();
     }
 
     private double calcularEsperaTotal(Ruta ruta, LocalDateTime creacion) {

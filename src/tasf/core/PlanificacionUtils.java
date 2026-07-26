@@ -443,7 +443,6 @@ public final class PlanificacionUtils {
             LocalDateTime finVentana = creacionUtc.plus(config.getHorizonteBusqueda());
             Duration plazo = getPlazoObjetivo(paquete, datos, config);
             LocalDateTime limiteEntrega = creacionUtc.plus(plazo);
-            
             List<Ruta> filtradas = new ArrayList<>();
             for (Ruta ruta : cacheadas) {
                 if (ruta.getSalidaUtc().isBefore(creacionUtc)) continue;

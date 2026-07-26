@@ -29,6 +29,7 @@ public class PlannerTests {
         tests.testConversionUtcYConexionFactible();
         tests.testRestriccionCapacidadAlmacen();
         tests.testALNSActualizaPesos();
+        tests.testAsignacionParcialNoDebeOmitirRutaDirectaValida();
         System.out.println("Todas las pruebas pasaron correctamente.");
     }
 
@@ -105,6 +106,51 @@ public class PlannerTests {
             w1 > 0.0 && w2 > 0.0 && w3 > 0.0 && w4 > 0.0,
             "Los pesos ALNS deben ser positivos"
         );
+    }
+
+    void testAsignacionParcialNoDebeOmitirRutaDirectaValida() {
+        Map<String, Aeropuerto> aeropuertos = new HashMap<>();
+        aeropuertos.put("SPIM", new Aeropuerto("SPIM", Continente.AMERICA, -300, 440));
+        aeropuertos.put("EHAM", new Aeropuerto("EHAM", Continente.EUROPA, 60, 480));
+
+        List<Vuelo> vuelos = PlanesVueloParser.parseLineas(
+                List.of(
+                        "SPIM-EHAM-01:29-03:00-120",
+                        "SPIM-EHAM-01:30-03:01-120",
+                        "SPIM-EHAM-01:31-03:04-120",
+                        "SPIM-EHAM-04:14-17:23-340"
+                ),
+                LocalDate.of(2026, 7, 26),
+                1,
+                aeropuertos
+        );
+
+        List<Paquete> paquetes = List.of(
+                new Paquete(
+                        "000000001",
+                        "SPIM",
+                        LocalDate.of(2026, 7, 26),
+                        LocalTime.of(1, 25),
+                        "EHAM",
+                        350,
+                        "0007729",
+                        "0007729",
+                        true
+                )
+        );
+
+        Dataset datos = new Dataset(aeropuertos, vuelos, paquetes);
+        Config_Simulacion config = new Config_Simulacion();
+        config.setAeropuertoHub("SKBO");
+        config.setPlazoIntercontinental(Duration.ofHours(48));
+        config.setMinimaConexion(Duration.ofMinutes(10));
+        config.setMaxEscalas(2);
+        config.setMaxRutasPorPaquete(8);
+        config.setIteracionesALNS(20);
+
+        Solucion solucion = new ALNS_Strategy(17L).planificar(datos, config);
+        int asignadas = solucion.getMaletasAsignadas();
+        assertEquals(350, asignadas, "No deberia omitir una ruta directa valida cuando hay capacidad total suficiente");
     }
 
     private Dataset crearDatasetBase(int capacidadHub) {
